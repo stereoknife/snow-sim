@@ -1,0 +1,26 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+// Create a RenderTexture with enableRandomWrite flag and set it
+// with cs.SetTexture
+
+Texture2D<uint> heightmap;
+RWTexture2D<uint2> snow;
+
+uint2 n = uint2(0,1);
+uint2 s = uint2(0,-1);
+uint2 e = uint2(1,0);
+uint2 w = uint2(-1,0);
+
+[numthreads(8,8,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    snow[id.xy] = snow[id.xy].gg;
+    
+    uint h = heightmap[id.xy] + snow[id.xy].r;
+    uint hn = heightmap[id.xy + n] + snow[id.xy + n].r;
+    uint he = heightmap[id.xy + e] + snow[id.xy + e].r;
+    uint hw = heightmap[id.xy + w] + snow[id.xy + w].r;
+    uint hs = heightmap[id.xy + s] + snow[id.xy + s].r;
+    uint4 hh = uint4(hn,he,hw,hs);
+}

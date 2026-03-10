@@ -442,8 +442,9 @@ GameObject:
   m_Component:
   - component: {fileID: 1394619227}
   - component: {fileID: 1394619228}
+  - component: {fileID: 1394619229}
   m_Layer: 0
-  m_Name: GameObject
+  m_Name: Terrain
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -476,11 +477,22 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 252b380654ca14a379972e3aa3254e77, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TerrainGen
-  material: {fileID: 2100000, guid: 3a1f2a5c9cac049c79abd90db5187f0d, type: 2}
   heightmap: {fileID: 2800000, guid: 479c9c5b126d64d83b8135612b36cca2, type: 3}
-  cube: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
-  pixelSize: 1
   height: 70
+--- !u!114 &1394619229
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1394619225}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c85bbb6539e34d63b777a6c82019273e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TerrainRenderer
+  material: {fileID: 2100000, guid: 3a1f2a5c9cac049c79abd90db5187f0d, type: 2}
+  cube: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
