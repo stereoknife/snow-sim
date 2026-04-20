@@ -1,0 +1,11 @@
+Heightfield:
+    [x] Import from 2D texture
+    [x] Export to 2D texture
+    [ ] Generate mesh
+    [ ] Implement descriptors
+        [-] Temperature
+        [x] Sun exposure
+            [x] Direct sunlight
+            [x] Ambient occlusion - line based thingy!
+            [x] Indirect bounce
+        [ ] Wind
