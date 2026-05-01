@@ -1,0 +1,15 @@
+- Store direct map as a double4 field, storing up to 4 seasons/months/time periods and interpolating between them
+    - Check evolution of sunlight between seasons/months for an appropriate interpolation?
+    
+- How to update data maps if terrain changes?
+    - update affected area
+    - update areas affected by affected areas
+    
+- Larger simulations
+    - Stochastic updates?
+    
+- Cloud cover
+
+- Test against real historical data
+
+- Select avalanche starting point weighted on geometry and/or stresses

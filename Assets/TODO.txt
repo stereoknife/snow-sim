@@ -1,11 +1,27 @@
 Heightfield:
     [x] Import from 2D texture
     [x] Export to 2D texture
-    [ ] Generate mesh
-    [ ] Implement descriptors
-        [-] Temperature
+    [x] Generate mesh
+    [x] Implement descriptors
+        [x] Temperature
         [x] Sun exposure
             [x] Direct sunlight
             [x] Ambient occlusion - line based thingy!
             [x] Indirect bounce
-        [ ] Wind
+        [x] Wind
+    [ ] Simulation
+        [x] Snowfall
+        [x] Melt
+        [x] Stability
+        [x] Diffusion
+        [ ] Transport
+        [ ] Avalanche
+        
+        
+Other:
+    [x] Change heightfield from km to m
+    [x] Change snowfield from cm to m
+    [x] Change wind from km to m
+    [ ] Separate instancing into 2 commands, for terrain and snow
+        [ ] Give terrain white/bottom layer colour if it's snowed on
+    [ ] Check performance on a larger (1024^2) grid

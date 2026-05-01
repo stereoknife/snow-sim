@@ -25,7 +25,7 @@ GraphicsSettings:
   m_LensFlare:
     m_Mode: 1
     m_Shader: {fileID: 102, guid: 0000000000000000f000000000000000, type: 0}
-  m_VideoShadersIncludeMode: 2
+  m_VideoShadersIncludeMode: 1
   m_AlwaysIncludedShaders:
   - {fileID: 7, guid: 0000000000000000f000000000000000, type: 0}
   - {fileID: 15104, guid: 0000000000000000f000000000000000, type: 0}
@@ -46,7 +46,7 @@ GraphicsSettings:
   m_LightmapStripping: 0
   m_FogStripping: 0
   m_InstancingStripping: 0
-  m_BrgStripping: 0
+  m_BrgStripping: 2
   m_LightmapKeepPlain: 1
   m_LightmapKeepDirCombined: 1
   m_LightmapKeepDynamicPlain: 1
@@ -60,7 +60,67 @@ GraphicsSettings:
   m_RenderPipelineGlobalSettingsMap:
     UnityEngine.Rendering.Universal.UniversalRenderPipeline: {fileID: 11400000, guid: 18dc0cd2c080841dea60987a38ce93fa, type: 2}
   m_ShaderBuildSettings:
-    keywordDeclarationOverrides: []
+    keywordDeclarationOverrides:
+    - keywords:
+      - name: _
+        keepInBuild: 0
+      - name: _DBUFFER_MRT1
+        keepInBuild: 0
+      - name: _DBUFFER_MRT2
+        keepInBuild: 0
+      - name: _DBUFFER_MRT3
+        keepInBuild: 0
+      variantGenerationMode: 0
+    - keywords:
+      - name: _DECAL_NORMAL_BLEND_LOW
+        keepInBuild: 0
+      - name: _DECAL_NORMAL_BLEND_MEDIUM
+        keepInBuild: 0
+      - name: _DECAL_NORMAL_BLEND_HIGH
+        keepInBuild: 0
+      variantGenerationMode: 0
+    - keywords:
+      - name: _
+        keepInBuild: 0
+      - name: _DECAL_LAYERS
+        keepInBuild: 0
+      variantGenerationMode: 0
+    - keywords:
+      - name: _
+        keepInBuild: 0
+      - name: _FOG_LINEAR
+        keepInBuild: 0
+      - name: FOG_EXP
+        keepInBuild: 0
+      - name: FOG_EXP2
+        keepInBuild: 0
+      variantGenerationMode: 0
+    - keywords:
+      - name: _
+        keepInBuild: 0
+      - name: LOD_FADE_CROSSFADE
+        keepInBuild: 0
+      variantGenerationMode: 0
+    - keywords:
+      - name: _
+        keepInBuild: 0
+      - name: _ADDITIONAL_LIGHTS_VERTEX
+        keepInBuild: 0
+      - name: _ADDITIONAL_LIGHTS
+        keepInBuild: 0
+      variantGenerationMode: 0
+    - keywords:
+      - name: _
+        keepInBuild: 0
+      - name: _LIGHT_COOKIES
+        keepInBuild: 0
+      variantGenerationMode: 0
+    - keywords:
+      - name: _
+        keepInBuild: 0
+      - name: _LIGHT_LAYERS
+        keepInBuild: 0
+      variantGenerationMode: 0
   m_LightsUseLinearIntensity: 1
   m_LightsUseColorTemperature: 1
   m_LogWhenShaderIsCompiled: 0
