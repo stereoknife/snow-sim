@@ -5,7 +5,7 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
-
+using UnityEngine;
 using static Unity.Mathematics.math;
 
 namespace TFM.Simulation
@@ -17,7 +17,6 @@ namespace TFM.Simulation
             // Snowfall
             public double SnowfallMinHeight;        // m
             public double SnowfallStrength;         // day⁻¹
-            public double SnowfallPerDegree;        // m / °C
             public double SnowfallMax;              // m
             public double SnowfallPowderRatio;      // ratio
             public double SnowfallUnstableRatio;    // ratio
@@ -45,14 +44,16 @@ namespace TFM.Simulation
             // Diffusion
             public double DiffusionRestSlope;
             public double DiffusionRate;
+            
+            // Wind
+            public double WindPlates;
 
             public static Parameters Default => new()
             {
                 TempBase = 0,
                 SnowfallMinHeight = 0,
                 
-                SnowfallStrength = 0.01,
-                SnowfallPerDegree = 0.1f,
+                SnowfallStrength = 0.001,
                 SnowfallMax = 1000,
                 SnowfallPowderRatio = 5,
                 SnowfallUnstableRatio = 1,
@@ -68,9 +69,10 @@ namespace TFM.Simulation
                 StabilityHot = 0.0001,
                 StabilityMedium = 0.0001,
                 StabilityFreeze = 0,
-                StabilityCompactionPressure = 1e-3,
+                StabilityCompactionPressure = 0.001,
                 DiffusionRestSlope = 0.5,
-                DiffusionRate = 0.5
+                DiffusionRate = 0.5,
+                WindPlates = 0.1,
             };
         }
         
@@ -90,9 +92,9 @@ namespace TFM.Simulation
             [NativeDisableParallelForRestriction] public double4F snow;
             [ReadOnly] public doubleF height, temperature;
             public double step;
-            public double sfPerDay, sfPerDegree, sfMinHeight, sfMax, sfPowderRatio, sfUnstableRatio;
+            public double sfPerDay, sfMinHeight, sfMax, sfPowderRatio, sfUnstableRatio;
             public double csMin, csTempFactor, csMaxTemp;
-            public double stabMinSlope;
+            public double stabMinSlope, baseTemp;
 
             public SnowfallJob(double4F snow, doubleF height, doubleF temperature, double step, ref Parameters P)
             {
@@ -101,7 +103,6 @@ namespace TFM.Simulation
                 this.temperature = temperature;
                 this.step = step;
                 sfPerDay = P.SnowfallStrength;
-                sfPerDegree = P.SnowfallPerDegree;
                 sfMinHeight = P.SnowfallMinHeight;
                 sfMax = P.SnowfallMax;
                 sfPowderRatio = P.SnowfallPowderRatio;
@@ -110,19 +111,27 @@ namespace TFM.Simulation
                 csTempFactor = P.CriticalSlopeTempFactor;
                 csMaxTemp = P.CriticalSlopeMaxTemp;
                 stabMinSlope = P.StabilityMinSlope;
+                baseTemp = P.TempBase;
             }
             
             public void Execute(int index)
             {
                 var slope = cmax(field.gradient(height, index));
-                var dd = sfPerDay * sfPerDegree * clamp(max(0d, height[index] - sfMinHeight), 0d, sfMax);
-                var cs = csMin + csTempFactor * max(0d, csMaxTemp - temperature[index]);
+                
+                // Get amount of snow that has fallen on this cell
+                var airTemp = (height[index] - sfMinHeight) * 0.01;
+                var dd = sfPerDay * clamp(airTemp, 0d, sfMax);
+                // Get critical slope
+                var cs = csMin + csTempFactor * max(0d, csMaxTemp - temperature[index] - baseTemp);
+                
+                // Ratio of powder snow
                 var xpow = saturate(sfPowderRatio - cs);
-                var xuns = clamp((slope - stabMinSlope) * sfUnstableRatio, 0d, (1d - xpow));
+                // Ratio of unstable snow
+                var xuns = clamp((slope - stabMinSlope) * sfUnstableRatio, 0d, 1d - xpow);
+                // Ratio of stable snow
                 var xstb = 1d - xpow - xuns;
-
-                var x = double4(0d, xstb, xuns, xpow);
-                snow[index] += x * dd * step;
+                
+                snow[index] += double4(0d, xstb, xuns, xpow) * dd * step;
             }
         }
 
@@ -142,16 +151,17 @@ namespace TFM.Simulation
         [BurstCompile]
         private struct MeltJob : IJobFor
         {
-            [NativeDisableParallelForRestriction] double4F snow;
-            [ReadOnly] doubleF temperature, height;
+            [NativeDisableParallelForRestriction] double4F snowF;
+            [ReadOnly] doubleF tempF, heightF;
             private double step, tempBase, meltRate, meltTemp, meltCompactionEffect;
-            private double stabStableTemp, stabUnstableTemp, stabFreezeTemp, stabHot, stabMedium, stabFreeze, stabCompactionPressure;
+            private double stabStableTemp, stabUnstableTemp, stabFreezeTemp, stabHot, stabMedium, stabFreeze,
+                stabCompactionPressure, stabMinSlope, unstableFactor;
 
-            public MeltJob(double4F snow, doubleF temperature, doubleF height, double step, ref Parameters P)
+            public MeltJob(double4F snowF, doubleF tempF, doubleF heightF, double step, ref Parameters P)
             {
-                this.snow = snow;
-                this.temperature = temperature;
-                this.height = height;
+                this.snowF = snowF;
+                this.tempF = tempF;
+                this.heightF = heightF;
                 this.step = step;
                 tempBase = P.TempBase;
                 meltRate = P.MeltRate;
@@ -164,49 +174,58 @@ namespace TFM.Simulation
                 stabFreeze = P.StabilityFreeze;
                 stabCompactionPressure = P.StabilityCompactionPressure;
                 meltCompactionEffect = 0;
+                stabMinSlope = P.StabilityMinSlope;
+                unstableFactor = P.SnowfallUnstableRatio;
             }
             
             public void Execute(int index)
             {
-                // Melting
+                var temperature = tempF[index] + tempBase;
+                var snow = snowF[index];
+                var pressure = csum(snow.yzw);
+                var slope = cmax(field.slope(heightF, snowF, index));
+                slope = max(0, slope - stabMinSlope) * unstableFactor;
                 
-                // TODO: Apparently there's this "melt compaction effect" which is not mentioned in the paper but appears
-                //  in source. Should maybe handle it?
-                var t = temperature[index] + tempBase;
-                var d = snow[index];
-                double pressure = csum(d.yzw);
-                d.w += -step * meltRate * max(0, t - meltTemp); // powder
-                d.z += min(0, d.w); // unstable
+                double stability;
+                if (temperature > stabStableTemp)
+                {
+                    stability = remap(stabUnstableTemp, stabStableTemp, -stabHot, stabMedium, temperature);
+                    stability = clamp(stability, -stabHot, stabMedium);
+                }
+                else
+                {
+                    stability = remap(stabStableTemp, stabFreeze, stabMedium, stabFreeze, temperature);
+                    stability = clamp(stability, stabFreeze, stabMedium);
+                }
 
-                double stable = d.s() + d.c();
-                double compaction = select(d.c() / stable, 0, stable < 0.0001);
-                
-                d.y += min(0, d.z * (1 - compaction) * meltCompactionEffect); // stable
-                d.x += min(0, d.y); // compacted
+                stability *= step;
+                if (stability < 0)
+                    stability *= slope;
+                else if (slope > 1)
+                    stability /= slope;
+
+                // Melting
+                var melt = -step * meltRate * max(0, temperature - meltTemp);
+                var stable = csum(snow.xy);
+                var compaction = select(snow.x / stable, 0, stable < 0.0001);
+                snow.w += melt; // powder
+                snow.z += min(0, snow.w); // unstable
+                snow.y += min(0, snow.z /* * (1 - compaction) * meltCompactionEffect*/); // stable
+                snow.x += min(0, snow.y);
+                snow = select(snow, 0, snow < 0.001);
                 
                 // Stability
                 
-                double temp = temperature[index];
-                double slope = cmax(field.slope(height, index));
-
-                double4 hotStability = double4(stabUnstableTemp, stabStableTemp, stabHot, stabMedium);
-                double4 coldStability = double4(stabStableTemp, stabFreezeTemp, stabMedium, stabFreeze);
-                double4 stabValues = select(hotStability, coldStability, temp > stabStableTemp);
-
-                double x = saturate(unlerp(stabValues.x, stabValues.y, temp));
-                double stability = (1.0 - x) * stabValues.z + x * stabValues.w;
-
-                stability *= select(1d, slope, stability < 0d || stability > 1d);
+                // Stability will at most eliminate all stable or unstable snow
+                stability = clamp(stability, -csum(snow.xy), snow.z);
+                var total = csum(snow.xyz);
                 
-                double available = d.s() + d.c();
-            
-                stability = clamp(stability, -available, d.u());
-
-                d.unstable(max(0d, d.u() - stability));
-                d.compacted(
-                    clamp(d.c() + pressure * stabCompactionPressure, 0, available - d.p() - d.u())
-                );
-                snow[index] = d;
+                snow.z -= stability;
+                snow.x = clamp(snow.x + pressure * stabCompactionPressure, 0,total - snow.z);
+                snow.y = total - snow.z - snow.x;
+                snow = select(snow, 0, snow < 0.001);
+                
+                snowF[index] = snow;
             }
         }
         
@@ -265,41 +284,47 @@ namespace TFM.Simulation
                 int2 up   = min(ij + 1, snow.dimension - 1);
                 int2 down = max(ij - 1, 0);
 
-                var h = height[ij];
-                var hn = double4(
-                    height[ij.x, up.y], 
-                    height[ij.x, down.y], 
-                    height[up.x, ij.y], 
-                    height[down.x, ij.y]
-                );
-                var dn = double4(double2(height.cellSize.y), double2(height.cellSize.x));
-
-                var sd = (h - hn) / dn;
-                var md = select(max(0, sd - diffRestSlope), min(0, sd + diffRestSlope), sd < 0);
-                md *= step * diffRate;
-
-                var i = csum(min(0, md));
-                var o = csum(max(0, md));
-                var P = snow[ij].w;
-                var smd = md * select(1, (i + P) / o, o > i + P);
-                md = select(smd, md, md < 0);
-
                 var du = snow[ij.x, up.y];
                 var dd = snow[ij.x, down.y];
                 var dl = snow[up.x, ij.y];
                 var dr = snow[down.x, ij.y];
-            
-                var np = double4( du.w, dd.w, dl.w, dr.w);
-                np += md;
-                du.w = np.x;
-                dd.w = np.y;
-                dl.w = np.z;
-                dr.w = np.w;
+                var npow = double4( du.w, dd.w, dl.w, dr.w);
+                
+                var h = height[ij];
+                var hn = double4(
+                    height[ij.x, up.y] + csum(du), 
+                    height[ij.x, down.y] + csum(dd), 
+                    height[up.x, ij.y] + csum(dl), 
+                    height[down.x, ij.y] + csum(dr)
+                );
+                var dn = height.cellSize.yyxx;
+
+                var sd = (h - hn) / dn;
+                var mdpos = max(0, sd - diffRestSlope);
+                var mdneg = clamp(sd + diffRestSlope, 0, npow);
+                var md = select(mdpos, mdneg, sd < 0);
+                md *= step * diffRate;
+
+                var i = csum(min(0, md));
+                var o = csum(max(0, md));
+                var pow = snow[ij].w;
+                var smd = md * select(1, (i + pow) / o, o > i + pow);
+                md = select(smd, md, md < 0);
+                
+                npow = max(0, npow + md);
+                du.w = npow.x;
+                dd.w = npow.y;
+                dl.w = npow.z;
+                dr.w = npow.w;
             
                 snow[ij.x, up.y] = du;
                 snow[ij.x, down.y] = dd;
                 snow[up.x, ij.y] = dl;
                 snow[down.x, ij.y] = dr;
+                
+                var s = snow[index];
+                s.w -= min(csum(md), s.w);
+                snow[index] = s;
             }
         }
         
@@ -308,9 +333,26 @@ namespace TFM.Simulation
         
         #region Transport
 
-        public static void Transport(double4F snow, double3F wind, doubleF windAltitude, doubleF height)
+        public static void Transport(double4F snow, double3F wind, doubleF windAltitude, doubleF height, ref Parameters P)
         {
-            
+            var job = new TransportJob(snow, wind, windAltitude, height, ref P);
+            for (int stage = 0; stage < 5; stage++)
+            {
+                job.stage = stage;
+                job.Run(snow.Length);
+            }
+        }
+        
+        public static JobHandle Transport(double4F snow, double3F wind, doubleF windAltitude, doubleF height, ref Parameters P, JobHandle dependsOn)
+        {
+            var job = new TransportJob(snow, wind, windAltitude, height, ref P);
+            for (int stage = 0; stage < 5; stage++)
+            {
+                job.stage = stage;
+                dependsOn = job.ScheduleParallel(snow.Length, 256, dependsOn);
+            }
+
+            return dependsOn;
         }
 
         private struct TransportJob : IJobFor
@@ -318,15 +360,63 @@ namespace TFM.Simulation
             public double4F snow;
             [ReadOnly] public double3F wind;
             [ReadOnly] public doubleF altitude, height;
+            private double stabMinSlope, unstableFactor;
+
+            // Add parameter
+            private double windPlates;
+            public int stage;
+
+            public TransportJob(double4F snow, double3F wind, doubleF altitude, doubleF height, ref Parameters P)
+            {
+                this.snow = snow;
+                this.wind = wind;
+                this.altitude = altitude;
+                this.height = height;
+                stabMinSlope = P.StabilityMinSlope;
+                unstableFactor = P.SnowfallUnstableRatio;
+                windPlates = P.WindPlates;
+                stage = 0;
+            }
             
             public void Execute(int index)
             {
-                var grad2 = field.gradient2(height, index);
-                var curv = dot(grad2, wind[index].xz);
-                var d = csum(snow[index]) * 0.001;
-                var totalHeight = height[index] + d;
-                curv = clamp(curv, 0, totalHeight - altitude[index]);
-                var erosion = max(curv, d);
+                int2 ij = snow.cell(index);
+                if ((ij.y * 2 + ij.x) % 5 != stage) return;
+                
+                var grad2 = field.gradient2(height, snow, index);
+                var curv = dot(grad2, abs(wind[index].xz));
+                var d = snow[index];
+                var td = csum(d);
+                var totalHeight = height[index] + td;
+                curv = clamp(-curv, 0, totalHeight - altitude[index]);
+                var erosion = max(curv, td);
+
+                var shift = normalize(wind[index].xz);
+                shift *= erosion;
+                var ndir = (int2)sign(wind[index].xz);
+                var n = clamp(ij + ndir, 0, snow.dimension - 1);
+                var nd = snow[n.x, ij.y];
+                nd.y += shift.x;
+                snow[n.x, ij.y] = nd;
+                nd = snow[ij.x, n.y];
+                nd.y += shift.y;
+                snow[ij.x, n.y] = nd;
+                
+                // Remaining snow turns into powder
+                td -= erosion;
+                d.w = min(d.w, td);
+                d.z = min(d.z, td - d.w);
+                var stable = max(0, td - d.w - d.z);
+                
+                var slope = cmax(field.slope(height, snow, ij));
+                var xuns = max(0, slope - stabMinSlope) * unstableFactor;
+                // TODO: This can be precomputed
+                var windTerrain = dot(wind[index].xz, field.cgradient(wind, index).c1);
+                var unstability = min(stable, xuns * max(0, windTerrain) * windPlates);
+                d.z += unstability;
+                d.x = min(d.x, stable - unstability);
+                d.y = stable - unstability - d.x;
+                snow[index] = d;
             }
         }
 

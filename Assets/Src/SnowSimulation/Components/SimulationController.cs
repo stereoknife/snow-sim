@@ -39,7 +39,7 @@ namespace TFM.Components
             var terrainSize = double3(terrain.sizeX, terrain.height, terrain.sizeZ) * 1000;
             height = doubleF.FromTexture(terrain.heightmap, terrainSize, Allocator.Persistent);
             temperature = new doubleF(height, Allocator.Persistent);
-            snow = new double4F(height, Allocator.Persistent, 0.01);
+            snow = new double4F(height, Allocator.Persistent, double4(0, 0, 0, 0));
             wind = new double3F(height, Allocator.Persistent, right() * 0.01f);
             _ = fieldRenderer.RegisterField(height, FieldRenderer.Name.Heightmap, default);
             
@@ -51,8 +51,9 @@ namespace TFM.Components
             JobHandle dlj = sun.DirectLighting(height, dlf, default);
             JobHandle aej = sun.AmbientLighting(height, aef, default);
             JobHandle ilj = sun.IndirectLightingParallel(height, dlf, ilf, dlj);
-
+            
             var wp = Wind.Parameters.Default;
+            
             JobHandle wnd = Wind.Venturi(wind, height, ref wp, default);
             wnd = fieldRenderer.RegisterField(wind, FieldRenderer.Name.VenturiWind, wnd);
             wnd = Wind.TerrainDeflection(wind, height, ref wp, wnd);
@@ -93,8 +94,8 @@ namespace TFM.Components
 
         private void Update()
         {
-            _parameters.TempBase = _weather.Temperature;
-            _parameters.SnowfallMinHeight = _weather.Altitude0C;
+            _parameters.TempBase = 5;
+            _parameters.SnowfallMinHeight = _parameters.TempBase * 100;
             var (ev, dt) = events.Step(Time.deltaTime * timeMultiplier);
             JobHandle jh = default;
             switch (ev)
@@ -102,17 +103,14 @@ namespace TFM.Components
                 case null:
                     return;
                 case Events.Name.MeltStep:
-                    //Debug.Log($"Melt at {Time.frameCount}");
                     jh = Snow.Melt(snow, temperature, height, dt.Value, ref _parameters, jh);
                     break;
                 case Events.Name.TransportStep:
                     break;
-                case Events.Name.DifussionStep:
-                    //Debug.Log($"Diffusion at {Time.frameCount}");
+                case Events.Name.DiffusionStep:
                     jh = Snow.Diffusion(snow, height, dt.Value, ref _parameters, jh);
                     break;
                 case Events.Name.SnowfallStep:
-                    //Debug.Log($"Snowfall at {Time.frameCount}");
                     jh = Snow.Snowfall(snow, height, temperature, dt.Value, ref _parameters, jh);
                     break;
                 case Events.Name.SnowfallEnd:
@@ -186,7 +184,7 @@ namespace TFM.Components
             public void Execute(int index)
             {
                 var light = temperature[index];
-                temperature[index] = heightfield[index] * 1000 * kt + light * ki;
+                temperature[index] = heightfield[index] * kt + light * ki;
             }
         }
 
@@ -206,7 +204,7 @@ namespace TFM.Components
             {
                 MeltStep,
                 TransportStep,
-                DifussionStep,
+                DiffusionStep,
                 SnowfallStep,
                 SnowfallStart,
                 SnowfallEnd,
@@ -221,7 +219,7 @@ namespace TFM.Components
             private const float snowfallStepLambda = 1f;
             private const float snowfallStartLambda = 7f;
             private const float snowfallEndLambda = 3f;
-            private const float diffusionStepLambda = 0.5f;
+            private const float diffusionStepLambda = 0.3f;
 
             public Events(uint seed)
             {
@@ -258,7 +256,7 @@ namespace TFM.Components
                 if (diffusionStep <= 0)
                 {
                     diffusionStep = diffusionStepDt = Q(rng.NextFloat(), diffusionStepLambda);
-                    return (Name.DifussionStep, diffusionStepDt);
+                    return (Name.DiffusionStep, diffusionStepDt);
                 }
 
                 if (snowfallStep <= 0)
