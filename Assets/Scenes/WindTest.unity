@@ -168,6 +168,7 @@ MonoBehaviour:
   sizeX: 8.5
   sizeZ: 8.5
   height: 3.3
+  units: 0
 --- !u!114 &854384940
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -181,7 +182,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: SnowSimulation::TFM.Components.WindSource
   windHeading: 0
-  windSpeedAtBase: 0.06
+  windSpeedAtBase: 0.1
   updateSmoothWind: 1
   updateRoughWind: 0
   windMaterial: {fileID: 2100000, guid: 038cdeaf2bca24f21b671441f7f4ba75, type: 2}
