@@ -20,80 +20,72 @@ namespace TFM.Components
         
         public doubleF height;
         public doubleF temperature;
+        public doubleF windAltitude;
         public double3F wind;
         public double4F snow;
 
         private Events events = new (1337);
         private Weather _weather;
 
+        private Mesh windMesh;
+        private RenderParams rp;
+
         private Snow.Parameters _parameters = Snow.Parameters.Default;
         
         private async void Awake()
         {
             enabled = false;
+            
             var sun = GetComponent<Sun>();
             var terrain = GetComponent<Terrain>();
             var fieldRenderer = GetComponent<FieldRenderer>();
             _weather = GetComponent<Weather>();
 
-            var terrainSize = double3(terrain.sizeX, terrain.height, terrain.sizeZ) * 1000;
+            var terrainSize = double3(terrain.sizeX, terrain.height, terrain.sizeZ) * terrain.units;
+            
             height = doubleF.FromTexture(terrain.heightmap, terrainSize, Allocator.Persistent);
-            temperature = new doubleF(height, Allocator.Persistent);
-            snow = new double4F(height, Allocator.Persistent, double4(0, 0, 0, 0));
-            wind = new double3F(height, Allocator.Persistent, right() * 0.01f);
             _ = fieldRenderer.RegisterField(height, FieldRenderer.Name.Heightmap, default);
             
-            doubleF dlf = new doubleF(height, Allocator.Persistent);
-            doubleF aef = new doubleF(height, Allocator.Persistent);
-            doubleF ilf = new doubleF(height, Allocator.Persistent);
-
-            // Compute maps
-            JobHandle dlj = sun.DirectLighting(height, dlf, default);
-            JobHandle aej = sun.AmbientLighting(height, aef, default);
-            JobHandle ilj = sun.IndirectLightingParallel(height, dlf, ilf, dlj);
+            temperature = new doubleF(height, Allocator.Persistent);
+            snow = new double4F(height, Allocator.Persistent, 0);
+            
+            var ilh = sun.Illumination(height, temperature, Allocator.Persistent, fieldRenderer, new JobHandle());
+            ilh = new NormalizeTemperature { temperature = temperature }.Schedule(ilh);
+            ilh = new ComputeTemperature(height, temperature).Schedule(temperature.Length, ilh);
+            ilh = fieldRenderer.RegisterField(temperature, FieldRenderer.Name.CombinedLighting, ilh);
+            
+            wind = new double3F(height, Allocator.Persistent, right() * 10);
+            windAltitude = new doubleF(height, Allocator.Persistent);
+            doubleF vspeed = new doubleF(height, Allocator.Persistent);
             
             var wp = Wind.Parameters.Default;
-            
-            JobHandle wnd = Wind.Venturi(wind, height, ref wp, default);
+            var wnd = Wind.Venturi(wind, height, ref wp, default);
             wnd = fieldRenderer.RegisterField(wind, FieldRenderer.Name.VenturiWind, wnd);
             wnd = Wind.TerrainDeflection(wind, height, ref wp, wnd);
             wnd = fieldRenderer.RegisterField(wind, FieldRenderer.Name.DeflectedWind, wnd);
-            doubleF altitude = new doubleF(height, Allocator.Persistent);
-            doubleF vspeed = new doubleF(height, Allocator.Persistent);
-            wnd = Wind.WindEffectSurface(wind, height, altitude, vspeed, ref wp, wnd);
-            wnd = fieldRenderer.RegisterField(altitude, FieldRenderer.Name.WindAltitude, wnd);
+            wnd = Wind.WindEffectSurface(wind, height, windAltitude, vspeed, ref wp, wnd);
+            wnd = fieldRenderer.RegisterField(windAltitude, FieldRenderer.Name.WindAltitude, wnd);
             wnd = fieldRenderer.RegisterField(wind, FieldRenderer.Name.WindSurface, wnd);
-
-            // Export to texture
-            dlj = fieldRenderer.RegisterField(dlf, FieldRenderer.Name.DirectLighting, dlj);
-            aej = fieldRenderer.RegisterField(aef, FieldRenderer.Name.AmbientLighting, aej);
-            ilj = fieldRenderer.RegisterField(ilf, FieldRenderer.Name.IndirectLighting, ilj);
-
-            JobHandle illum = JobHandle.CombineDependencies(dlj, aej, ilj);
-            illum = new CombineFields(dlf, aef, ilf, temperature).Schedule(temperature.Length, illum);
-            illum = new NormalizeTemperature { temperature = temperature }.Schedule(illum);
-            illum = new ComputeTemperature(height, temperature).Schedule(temperature.Length, illum);
-
-            illum = fieldRenderer.RegisterField(temperature, FieldRenderer.Name.CombinedLighting, illum);
-
-            wnd = altitude.GenerateMesh(out Mesh.MeshDataArray mda, wnd);
-
-            dlf.Dispose(illum);
-            aef.Dispose(illum);
-            ilf.Dispose(illum);
-            //altitude.Dispose(wnd);
             vspeed.Dispose(wnd);
+            wnd = windAltitude.GenerateMesh(out var mda, wnd);
 
-            illum = JobHandle.CombineDependencies(illum, wnd);
-            await illum.WaitForComplete();
-            illum.Complete();
-            
+            var all = JobHandle.CombineDependencies(ilh, wnd);
+            await all.WaitForComplete();
+            all.Complete();
+
+            windMesh = new Mesh();
+            Mesh.ApplyAndDisposeWritableMeshData(mda, windMesh);
+            windMesh.RecalculateBounds();
+            rp = new RenderParams(windMaterial);
+
             enabled = true;
             Debug.Log("Complete");
         }
 
         private void Update()
         {
+            if (windMesh) Graphics.RenderMesh(rp, windMesh, 0, transform.localToWorldMatrix);
+            
             _parameters.TempBase = 5;
             _parameters.SnowfallMinHeight = _parameters.TempBase * 100;
             var (ev, dt) = events.Step(Time.deltaTime * timeMultiplier);
@@ -106,6 +98,7 @@ namespace TFM.Components
                     jh = Snow.Melt(snow, temperature, height, dt.Value, ref _parameters, jh);
                     break;
                 case Events.Name.TransportStep:
+                    jh = Snow.Transport(snow, wind, windAltitude, height, dt.Value, ref _parameters, jh);
                     break;
                 case Events.Name.DiffusionStep:
                     jh = Snow.Diffusion(snow, height, dt.Value, ref _parameters, jh);
@@ -124,47 +117,6 @@ namespace TFM.Components
         {
             temperature.Dispose();
             snow.Dispose();
-        }
-
-        [BurstCompile]
-        private struct AsembleInstances : IJobFor
-        {
-            [ReadOnly] public doubleF height;
-            public NativeArray<Matrix4x4> instances;
-            
-            public void Execute(int index)
-            {
-                var cell = height.cell(index);
-                var h = (float)height[index];
-                var cs = (float2)height.cellSize;
-                instances[index] = Matrix4x4.TRS(
-                    float3(cell *cs + cs / 2, h / 2).xzy,
-                    Quaternion.identity,
-                    float3(cs, h).xzy
-                );
-            }
-        }
-        
-        [BurstCompile]
-        private struct CombineFields : IJobFor
-        {
-            [ReadOnly] public doubleF a;
-            [ReadOnly] public doubleF b;
-            [ReadOnly] public doubleF c;
-            public doubleF result;
-
-            public CombineFields(doubleF a, doubleF b, doubleF c, doubleF result)
-            {
-                this.a = a;
-                this.b = b;
-                this.c = c;
-                this.result = result;
-            }
-            
-            public void Execute(int index)
-            {
-                result[index] = a[index] + b[index] + c[index];
-            }
         }
 
         [BurstCompile]
@@ -188,6 +140,7 @@ namespace TFM.Components
             }
         }
 
+        [BurstCompile]
         private struct NormalizeTemperature : IJob
         {
             public doubleF temperature;
@@ -216,16 +169,17 @@ namespace TFM.Components
             private Random rng;
             
             private const float meltStepLambda = 0.5f;
+            private const float transportStepLambda = 0.5f;
             private const float snowfallStepLambda = 1f;
             private const float snowfallStartLambda = 7f;
             private const float snowfallEndLambda = 3f;
-            private const float diffusionStepLambda = 0.3f;
+            private const float diffusionStepLambda = 0.5f;
 
             public Events(uint seed)
             {
                 rng = new Random(seed);
                 meltStep = meltStepDt = Q(rng.NextFloat(), meltStepLambda);
-                transportStep = transportStepDt = float.PositiveInfinity;
+                transportStep = transportStepDt = Q(rng.NextFloat(), transportStepLambda);
                 snowfallStep = snowfallStepDt = float.PositiveInfinity;
                 snowfallStart = snowfallStartDt = Q(rng.NextFloat(), snowfallStartLambda);
                 snowfallEnd = snowfallEndDt = float.PositiveInfinity;
@@ -249,7 +203,7 @@ namespace TFM.Components
 
                 if (transportStep <= 0)
                 {
-                    transportStep = transportStepDt = float.PositiveInfinity;
+                    transportStep = transportStepDt = Q(rng.NextFloat(), transportStepLambda);
                     return (Name.TransportStep, transportStepDt);
                 }
 

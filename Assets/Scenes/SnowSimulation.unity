@@ -801,7 +801,7 @@ MonoBehaviour:
     m_NumAlphaKeys: 2
   textureA: 0
   textureB: 8
-  operation: 0
+  operation: 3
   update: 0
 --- !u!114 &1394619232
 MonoBehaviour:

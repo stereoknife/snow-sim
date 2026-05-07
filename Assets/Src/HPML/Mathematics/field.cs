@@ -245,6 +245,7 @@ namespace HPML
         }
         
         public static double2 gradient2(doubleF a, double4F b, int at) => gradient2(a, b, a.cell(at));
+        /*
         public static double2 gradient2(doubleF a, double4F b, int2 at)
         {
             int2 up   = min(at + 1, b.dimension - 1);
@@ -253,7 +254,19 @@ namespace HPML
             return new double2(
                 (a[up.x] + csum(b[up.x]) + a[down.x] + csum(b[up.x])) * 0.5 - h,
                 (a[up.y] + csum(b[up.x]) + a[down.y] + csum(b[up.y])) * 0.5 - h
-            ) * a.iCellSize;
+            ) * a.iCellSize * 0.667;
         }
+        /*/
+        public static double2 gradient2(doubleF a, double4F b, int2 at)
+        {
+            int2 up   = min(at + 1, b.dimension - 1);
+            int2 down = max(at - 1, 0);
+            double h = a[at] + csum(b[at]);
+            return new double2(
+                a[up.x] + csum(b[up.x]) + a[down.x] + csum(b[up.x]) - 2*h,
+                a[up.y] + csum(b[up.x]) + a[down.y] + csum(b[up.y]) - 2*h
+            ) * a.iCellSize * a.iCellSize;
+        }
+        //*/
     }
 }

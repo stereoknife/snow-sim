@@ -29,7 +29,7 @@ namespace TFM.Components
         [SerializeField][Range(1, 50)] private int distanceSamples = 20;
         [SerializeField][Range(1, 500)] private double maxDistance = 50;
 
-        public void Temperature(in doubleF heightfield, doubleF output)
+        public void Illumination(in doubleF heightfield, doubleF output)
         {
             uint seed = 1;
             doubleF tmp = new doubleF(heightfield, Allocator.Persistent);
@@ -42,16 +42,34 @@ namespace TFM.Components
             field.normalize(output, output);
         }
         
-        public JobHandle Temperature(in doubleF heightfield, doubleF output, Allocator allocator, JobHandle dependsOn)
+        public JobHandle Illumination(in doubleF heightfield, doubleF output, Allocator allocator, FieldRenderer  fr, JobHandle dependsOn)
         {
-            doubleF tmp = new doubleF(heightfield, allocator);
-            dependsOn = DirectLighting(heightfield, tmp, dependsOn);
-            dependsOn = Add(tmp, output, dependsOn);
-            dependsOn = IndirectLighting(heightfield, output, tmp, dependsOn);
-            dependsOn = Add(tmp, output, dependsOn);
-            dependsOn = AmbientLighting(heightfield, tmp, dependsOn);
-            dependsOn = Add(tmp, output, dependsOn);
-            return dependsOn;
+            doubleF dl = new doubleF(heightfield, allocator);
+            doubleF il = new doubleF(heightfield, allocator);
+            doubleF al = new doubleF(heightfield, allocator);
+
+            bool debug = fr != null;
+            JobHandle dlr, ilr, alr, tor;
+            dlr = ilr = alr = tor = new JobHandle();
+            
+            var dlh = DirectLighting(heightfield, dl, dependsOn);
+            if (debug) dlr = fr.RegisterField(dl, FieldRenderer.Name.DirectLighting, dlh);
+            var ilh = IndirectLighting(heightfield, dl, il, dlh); 
+            if (debug) ilr = fr.RegisterField(il, FieldRenderer.Name.IndirectLighting, ilh);
+            var alh = AmbientLighting(heightfield, al, dependsOn);
+            if (debug) alr = fr.RegisterField(al, FieldRenderer.Name.AmbientLighting, alh);
+            
+            dlh = Add(dl, output, dlh);
+            ilh = Add(il, output, JobHandle.CombineDependencies(dlh, ilh));
+            alh = Add(al, output, JobHandle.CombineDependencies(ilh, alh));
+            
+            dl.Dispose(JobHandle.CombineDependencies(ilh, dlr));
+            il.Dispose(JobHandle.CombineDependencies(ilh, ilr));
+            al.Dispose(JobHandle.CombineDependencies(alh, alr));
+            
+            if (debug) tor = fr.RegisterField(output, FieldRenderer.Name.CombinedLighting, alh);
+            
+            return JobHandle.CombineDependencies(alh, tor);
         }
 
         private int Days(int2 x) => new DateTime(2000, x.y, x.x).DayOfYear;

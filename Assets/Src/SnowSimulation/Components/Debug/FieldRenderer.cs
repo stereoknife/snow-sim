@@ -46,8 +46,9 @@ namespace TFM.Components
 
         public JobHandle RegisterField(doubleF field, Name name, JobHandle dependsOn)
         {
-            var texture = new Texture2D(field.dimension.x, field.dimension.y, TextureFormat.RGBA32, false);
-            textures.Add(name, texture);
+            if (!textures.TryGetValue(name, out var texture))
+                texture = new Texture2D(field.dimension.x, field.dimension.y, TextureFormat.RGBA32, false);
+            textures.TryAdd(name, texture);
             dependsOn = name switch
             {
                 Name.DirectLighting => field.ToTextureRGBA(texture, Color.white, dependsOn),
@@ -60,8 +61,9 @@ namespace TFM.Components
         
         public JobHandle RegisterField(double3F field, Name name, JobHandle dependsOn)
         {
-            var texture = new Texture2D(field.dimension.x, field.dimension.y, TextureFormat.RGBA32, false);
-            textures.Add(name, texture);
+            if (!textures.TryGetValue(name, out var texture))
+                texture = new Texture2D(field.dimension.x, field.dimension.y, TextureFormat.RGBA32, false);
+            textures.TryAdd(name, texture);
             dependsOn = field.ToTextureRGBA(texture, false, dependsOn);
             StartCoroutine(Apply(texture, dependsOn));
             return dependsOn;
@@ -69,8 +71,9 @@ namespace TFM.Components
         
         public JobHandle RegisterField(doubleF field, Name name, bool negative, JobHandle dependsOn)
         {
-            var texture = new Texture2D(field.dimension.x, field.dimension.y, TextureFormat.RGBA32, false);
-            textures.Add(name, texture);
+            if (!textures.TryGetValue(name, out var texture))
+                texture = new Texture2D(field.dimension.x, field.dimension.y, TextureFormat.RGBA32, false);
+            textures.TryAdd(name, texture);
             dependsOn = field.ToTextureRGBA(texture, Color.red, Color.cyan, dependsOn);
             StartCoroutine(Apply(texture, dependsOn));
             return dependsOn;
@@ -107,6 +110,17 @@ namespace TFM.Components
                 r[i] = c;
             }
         }
+        
+        private void AsIs(Texture2D tex)
+        {
+            var r = render.GetRawTextureData<Color32>();
+            var a = tex.GetRawTextureData<Color32>();
+
+            for (int i = 0; i < r.Length; i++)
+            {
+                r[i] = a[i];
+            }
+        }
 
         private void OnValidate()
         {
@@ -121,6 +135,8 @@ namespace TFM.Components
                     render.Apply();
                     break;
                 default:
+                    AsIs(textures[textureA]);
+                    render.Apply();
                     break;
             }
 

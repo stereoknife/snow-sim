@@ -333,9 +333,9 @@ namespace TFM.Simulation
         
         #region Transport
 
-        public static void Transport(double4F snow, double3F wind, doubleF windAltitude, doubleF height, ref Parameters P)
+        public static void Transport(double4F snow, double3F wind, doubleF windAltitude, doubleF height, double step, ref Parameters P)
         {
-            var job = new TransportJob(snow, wind, windAltitude, height, ref P);
+            var job = new TransportJob(snow, wind, windAltitude, height, step, ref P);
             for (int stage = 0; stage < 5; stage++)
             {
                 job.stage = stage;
@@ -343,9 +343,9 @@ namespace TFM.Simulation
             }
         }
         
-        public static JobHandle Transport(double4F snow, double3F wind, doubleF windAltitude, doubleF height, ref Parameters P, JobHandle dependsOn)
+        public static JobHandle Transport(double4F snow, double3F wind, doubleF windAltitude, doubleF height, double step, ref Parameters P, JobHandle dependsOn)
         {
-            var job = new TransportJob(snow, wind, windAltitude, height, ref P);
+            var job = new TransportJob(snow, wind, windAltitude, height, step, ref P);
             for (int stage = 0; stage < 5; stage++)
             {
                 job.stage = stage;
@@ -357,21 +357,22 @@ namespace TFM.Simulation
 
         private struct TransportJob : IJobFor
         {
-            public double4F snow;
+            [NativeDisableParallelForRestriction] public double4F snow;
             [ReadOnly] public double3F wind;
             [ReadOnly] public doubleF altitude, height;
-            private double stabMinSlope, unstableFactor;
+            private double stabMinSlope, unstableFactor, step;
 
             // Add parameter
             private double windPlates;
             public int stage;
 
-            public TransportJob(double4F snow, double3F wind, doubleF altitude, doubleF height, ref Parameters P)
+            public TransportJob(double4F snow, double3F wind, doubleF altitude, doubleF height, double step, ref Parameters P)
             {
                 this.snow = snow;
                 this.wind = wind;
                 this.altitude = altitude;
                 this.height = height;
+                this.step = step;
                 stabMinSlope = P.StabilityMinSlope;
                 unstableFactor = P.SnowfallUnstableRatio;
                 windPlates = P.WindPlates;
@@ -383,30 +384,36 @@ namespace TFM.Simulation
                 int2 ij = snow.cell(index);
                 if ((ij.y * 2 + ij.x) % 5 != stage) return;
                 
-                var grad2 = field.gradient2(height, snow, index);
-                var curv = dot(grad2, abs(wind[index].xz));
+                var grad2 = -field.gradient2(height, snow, index) * 0.01;
+                var w = abs(wind[index].xz);
+                var curv = dot(w, grad2);
                 var d = snow[index];
-                var td = csum(d);
-                var totalHeight = height[index] + td;
-                curv = clamp(-curv, 0, totalHeight - altitude[index]);
-                var erosion = max(curv, td);
+                var snowAmt = csum(d);
+                
+                var erosion = clamp(curv, 0, min(snowAmt, 1));
+                erosion = clamp(height[index] + snowAmt - altitude[index], 0, erosion);
+                snowAmt -= erosion;
 
-                var shift = normalize(wind[index].xz);
-                shift *= erosion;
-                var ndir = (int2)sign(wind[index].xz);
-                var n = clamp(ij + ndir, 0, snow.dimension - 1);
-                var nd = snow[n.x, ij.y];
-                nd.y += shift.x;
-                snow[n.x, ij.y] = nd;
-                nd = snow[ij.x, n.y];
-                nd.y += shift.y;
-                snow[ij.x, n.y] = nd;
+                var windDir = (int2)sign(wind[index].xz);
+                var windNeighbour = clamp(ij + windDir, 0, snow.dimension - 1);
+                
+                if (csum(w) > 0.001)
+                {
+                    var windNorm = w / csum(w);
+                    var nd = snow[windNeighbour.x, ij.y];
+                    nd.y += erosion * windNorm.x;
+                    snow[windNeighbour.x, ij.y] = nd;
+                    nd = snow[ij.x, windNeighbour.y];
+                    nd.y += erosion * windNorm.y;
+                    snow[ij.x, windNeighbour.y] = nd;
+                }
                 
                 // Remaining snow turns into powder
-                td -= erosion;
-                d.w = min(d.w, td);
-                d.z = min(d.z, td - d.w);
-                var stable = max(0, td - d.w - d.z);
+                
+                snowAmt -= erosion;
+                d.w = min(d.w, snowAmt);
+                d.z = min(d.z, snowAmt - d.w);
+                var stable = max(0, snowAmt - d.w - d.z);
                 
                 var slope = cmax(field.slope(height, snow, ij));
                 var xuns = max(0, slope - stabMinSlope) * unstableFactor;

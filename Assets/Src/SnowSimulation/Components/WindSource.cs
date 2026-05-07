@@ -34,16 +34,18 @@ namespace TFM.Components
         private doubleF _height;
         private doubleF _gaussianHeight;
         private double3F _wind;
-        private doubleF _alt, _spd;
+        private doubleF _alts, _spds, _altr, _spdr;
 
         private Mesh rtm, stm, rwm, swm;
 
         private Wind.WindEffectSurfaceJob wej;
         private RenderParams swrp, rwrp, strp, rtrp;
         private Transform t;
+        private FieldRenderer _fr;
 
         private void Awake()
         {
+            _fr = GetComponent<FieldRenderer>();
             t = transform;
             rtm = new Mesh();
             rtm.name = "Rough Terrain";
@@ -55,10 +57,15 @@ namespace TFM.Components
             swm.name = "Smooth Wind";
             
             var terrain = GetComponent<Terrain>();
-            _height = doubleF.FromTexture(terrain.heightmap, new(terrain.sizeX, terrain.height, terrain.sizeZ), Allocator.Persistent);
-            _wind = new double3F(_height, Allocator.Persistent, double3(cos(degrees(windHeading)), 0, sin(degrees(windHeading))) * windSpeedAtBase);
-            _alt = new doubleF(_height, Allocator.Persistent);
-            _spd = new doubleF(_height, Allocator.Persistent);
+            var scale = double3(terrain.sizeX, terrain.height, terrain.sizeZ) * terrain.units;
+            _height = doubleF.FromTexture(terrain.heightmap, scale, Allocator.Persistent);
+            var heading = double3(cos(radians(windHeading)), 0, sin(radians(windHeading)));
+            Debug.Log(heading);
+            _wind = new double3F(_height, Allocator.Persistent, heading * windSpeedAtBase);
+            _alts = new doubleF(_height, Allocator.Persistent);
+            _spds = new doubleF(_height, Allocator.Persistent);
+            _altr = new doubleF(_height, Allocator.Persistent);
+            _spdr = new doubleF(_height, Allocator.Persistent);
             _gaussianHeight = new doubleF(_height, Allocator.Persistent);
 
             var jh0 = new JobHandle();
@@ -75,16 +82,22 @@ namespace TFM.Components
             var wp = Wind.Parameters.Default;
             jh0 = Wind.VenturiParallel(_wind, _height, ref wp, jh0);
             jh0 = Wind.TerrainDeflectionParallel(_wind, _height,  ref wp, jh0);
+            jh0 = _fr.RegisterField(_wind, FieldRenderer.Name.DeflectedWind, jh0);
             
             var init = new Wind.InitializeWESValuesJob
             {
                 height = _height,
+                gaussian = _height,
                 wind = _wind,
-                altitude = _alt,
-                vspeed = _spd
+                altitude = _altr,
+                vspeed = _spdr
             };
-            jh0 = init.ScheduleParallel(_height.Length, 256, jh0);
-            JobHandle.CombineDependencies(jh0, jh1, jh2).Complete();
+            var jh3 = init.ScheduleParallel(_height.Length, 256, jh0);
+            init.altitude = _alts;
+            init.vspeed = _spds;
+            init.gaussian = _gaussianHeight;
+            var jh4 = init.ScheduleParallel(_height.Length, 256, JobHandle.CombineDependencies(jh0, jh2));
+            JobHandle.CombineDependencies(jh1, jh3, jh4).Complete();
 
             Mesh.ApplyAndDisposeWritableMeshData(mda_rt, rtm);
             rtm.RecalculateBounds();
@@ -111,9 +124,9 @@ namespace TFM.Components
                 height = _height,
                 gaussian = _gaussianHeight,
                 wind = _wind,
-                altitude = _alt,
-                vspeed = _spd,
-                falloff = 0.007,
+                altitude = _alts,
+                vspeed = _spds,
+                falloff = Wind.Parameters.Default.SurfaceFalloff,
                 iteration = 0
             };
         }
@@ -128,21 +141,29 @@ namespace TFM.Components
             if (updateSmoothWind)
             {
                 wej.gaussian = _gaussianHeight;
+                wej.vspeed = _spds;
+                wej.altitude = _alts;
                 sjh = wej.ScheduleParallel(_wind.Length, 64, sjh);
                 wej.iteration++;
                 sjh = wej.ScheduleParallel(_wind.Length, 64, sjh);
                 wej.iteration++;
-                sjh = _alt.GenerateMesh(out smda, sjh);
+                var jh0 = _alts.GenerateMesh(out smda, sjh);
+                var jh1 = _fr.RegisterField(_alts, FieldRenderer.Name.Heightmap, sjh);
+                sjh = JobHandle.CombineDependencies(jh0, jh1);
             }
             
             if (updateRoughWind)
             {
                 wej.gaussian = _height;
+                wej.vspeed = _spdr;
+                wej.altitude = _altr;
                 rjh = wej.ScheduleParallel(_wind.Length, 64, rjh);
                 wej.iteration++;
                 rjh = wej.ScheduleParallel(_wind.Length, 64, rjh);
                 wej.iteration++;
-                rjh = _alt.GenerateMesh(out rmda, rjh);
+                var jh0 = _altr.GenerateMesh(out rmda, rjh);
+                var jh1 = _fr.RegisterField(_altr, FieldRenderer.Name.WindAltitude, rjh);
+                rjh = JobHandle.CombineDependencies(jh0, jh1);
             }
             
             JobHandle.CombineDependencies(sjh, rjh).Complete();
@@ -166,6 +187,8 @@ namespace TFM.Components
                 Graphics.RenderMesh(strp, stm, 0, t.localToWorldMatrix);
             if (drawRoughTerrain)
                 Graphics.RenderMesh(rtrp, rtm, 0, t.localToWorldMatrix);
+            
+            if (wej.iteration > 1000) Debug.Break();
         }
 
         [BurstCompile]
@@ -187,14 +210,23 @@ namespace TFM.Components
                 {
                     for (int k = start.y; k < end.y; k++)
                     {
-                        double2 d = double2(j, k) * height.cellSize;
+                        double2 d = (double2(j, k) - cell) * height.cellSize;
                         double w = exp(-lengthsq(d) * smooth);
                         norm += w;
                         r += height[j, k] * w;
+
+                        if (r <= 0.00001)
+                        {
+                            var a = 0;
+                        }
                     }
                 }
 
                 gaussian[index] = r / norm;
+                if (isnan(gaussian[index]))
+                {
+                    var a = 0;
+                }
             }
         }
 
@@ -232,9 +264,12 @@ namespace TFM.Components
         private void OnDestroy()
         {
             _height.Dispose();
-            _spd.Dispose();
+            _spds.Dispose();
+            _spdr.Dispose();
             _wind.Dispose();
-            _alt.Dispose();
+            _alts.Dispose();
+            _altr.Dispose();
+            _gaussianHeight.Dispose();
         }
     }
 }

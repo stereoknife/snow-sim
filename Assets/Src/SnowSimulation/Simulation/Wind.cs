@@ -21,7 +21,7 @@ namespace TFM.Simulation
             {
                 VenturiIntensity = 0.001,
                 DeflectionIntensity = 0.5,
-                SurfaceFalloff = -0.7,
+                SurfaceFalloff = 0.7,
                 SurfaceMaxIterations = 500,
             };
         }
@@ -78,7 +78,7 @@ namespace TFM.Simulation
         public static JobHandle TerrainDeflection(double3F wind, doubleF height, ref Parameters P, JobHandle dependsOn)
         {
             var job = new TerrainDeflectionJob(wind, height, ref P);
-            return job.ScheduleParallel(height.Length, 256, dependsOn);
+            return job.Schedule(height.Length, dependsOn);
         }
         
         public static JobHandle TerrainDeflectionParallel(double3F wind, doubleF height, ref Parameters P, JobHandle dependsOn)
@@ -107,7 +107,7 @@ namespace TFM.Simulation
                 var cw = vec.cw(nxz);
                 var ccw = vec.ccw(nxz);
                 var nxzt = select(ccw, cw, dot(cw, wind[index].xz) > 0);
-                wind[index] *= (1 - length(nxz)) + intensity * length(wind[index]) * double3(nxzt, 0).xzy;
+                wind[index] = wind[index] * (1 - length(nxz)) + intensity * length(wind[index]) * double3(nxzt, 0).xzy;
             }
         }
         
@@ -161,7 +161,7 @@ namespace TFM.Simulation
         public struct InitializeWESValuesJob : IJobFor
         {
             [ReadOnly] public double3F wind;
-            [ReadOnly] public doubleF height;
+            [ReadOnly] public doubleF height, gaussian;
             public doubleF altitude, vspeed;
 
             public InitializeWESValuesJob(double3F wind, doubleF height, doubleF altitude, doubleF vspeed)
@@ -170,12 +170,17 @@ namespace TFM.Simulation
                 this.height = height;
                 this.altitude = altitude;
                 this.vspeed = vspeed;
+                gaussian = height;
             }
             
             public void Execute(int index)
             {
                 altitude[index] = height[index];
-                vspeed[index] = dot(wind[index].xz, field.gradient(height, index));
+                vspeed[index] = dot(wind[index].xz, field.gradient(gaussian, index));
+                if (isnan(vspeed[index]))
+                {
+                    var a = 0;
+                }
             }
         }
         
@@ -241,18 +246,18 @@ namespace TFM.Simulation
 
                 if (csum(w) < 0.001)
                     alt = -999999;
+                
                 if (alt <= height[index])
                 {
                     var grad = (gaussian[index] - double2(gaussian[n.x, cell.y], gaussian[cell.x, n.y])) * gaussian.iCellSize;
                     spd = dot(w, grad);
                     alt = height[index];
                 }
-                
-                if (iteration == 2)
+
+                if (alt - height[index] > 100)
                 {
                     var a = 0;
-                }
-
+                } 
                 altitude[index] = alt;
                 vspeed[index] = spd;
             }
