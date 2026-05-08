@@ -15,6 +15,13 @@ namespace HPML
         public static double area(double2 value) => value.x * value.y;
         
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static int volume(int3 value) => value.x * value.y * value.z;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static float volume(float3 value) => value.x * value.y * value.z;
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static double volume(double3 value) => value.x * value.y * value.z;
+        
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static double2 cw(float2 value) => float2(-value.y, value.x);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static double2 cw(double2 value) => double2(-value.y, value.x);

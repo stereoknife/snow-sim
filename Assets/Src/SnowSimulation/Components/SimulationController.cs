@@ -1,4 +1,5 @@
 using HPML;
+using TFM.Components.Solvers;
 using Unity.Collections;
 using UnityEngine;
 using Utils;
@@ -12,8 +13,8 @@ using Unity.Mathematics;
 
 namespace TFM.Components
 {
-    [RequireComponent(typeof(Terrain), typeof(Sun), typeof(Weather))]
-    public class SimulationController : MonoBehaviour
+    //[RequireComponent(typeof(Terrain), typeof(Sun), typeof(Weather))]
+    public class SimulationController : MonoBehaviour, ISnowSimulation
     {
         [SerializeField] private float timeMultiplier = 1f;
         [SerializeField] private Material windMaterial;
@@ -23,6 +24,11 @@ namespace TFM.Components
         public doubleF windAltitude;
         public double3F wind;
         public double4F snow;
+        public double4F flow;
+        public NativeBitArray moving;
+
+        public doubleF Heightfield => height;
+        public double4F Snowfield => snow;
 
         private Events events = new (1337);
         private Weather _weather;
@@ -44,18 +50,20 @@ namespace TFM.Components
             var terrainSize = double3(terrain.sizeX, terrain.height, terrain.sizeZ) * terrain.units;
             
             height = doubleF.FromTexture(terrain.heightmap, terrainSize, Allocator.Persistent);
-            _ = fieldRenderer.RegisterField(height, FieldRenderer.Name.Heightmap, default);
-            
             temperature = new doubleF(height, Allocator.Persistent);
-            snow = new double4F(height, Allocator.Persistent, 0);
+            snow = new double4F(height, Allocator.Persistent, 2);
+            wind = new double3F(height, Allocator.Persistent, right() * 10);
+            windAltitude = new doubleF(height, Allocator.Persistent);
+            flow = new double4F(height, Allocator.Persistent);
+            moving = new NativeBitArray(height.Length, Allocator.Persistent);
+            
+            _ = fieldRenderer.RegisterField(height, FieldRenderer.Name.Heightmap, default);
             
             var ilh = sun.Illumination(height, temperature, Allocator.Persistent, fieldRenderer, new JobHandle());
             ilh = new NormalizeTemperature { temperature = temperature }.Schedule(ilh);
             ilh = new ComputeTemperature(height, temperature).Schedule(temperature.Length, ilh);
             ilh = fieldRenderer.RegisterField(temperature, FieldRenderer.Name.CombinedLighting, ilh);
             
-            wind = new double3F(height, Allocator.Persistent, right() * 10);
-            windAltitude = new doubleF(height, Allocator.Persistent);
             doubleF vspeed = new doubleF(height, Allocator.Persistent);
             
             var wp = Wind.Parameters.Default;
@@ -84,8 +92,6 @@ namespace TFM.Components
 
         private void Update()
         {
-            if (windMesh) Graphics.RenderMesh(rp, windMesh, 0, transform.localToWorldMatrix);
-            
             _parameters.TempBase = 5;
             _parameters.SnowfallMinHeight = _parameters.TempBase * 100;
             var (ev, dt) = events.Step(Time.deltaTime * timeMultiplier);
@@ -115,8 +121,13 @@ namespace TFM.Components
 
         private void OnDestroy()
         {
+            height.Dispose();
             temperature.Dispose();
+            windAltitude.Dispose();
+            wind.Dispose();
             snow.Dispose();
+            flow.Dispose();
+            moving.Dispose();
         }
 
         [BurstCompile]

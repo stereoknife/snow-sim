@@ -1,7 +1,5 @@
 using System;
-using System.Runtime.CompilerServices;
 using HPML;
-using TFM.Components.Solvers;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -12,16 +10,14 @@ using UnityEngine.Rendering;
 
 namespace TFM.Components
 {
-
-    public class TerrainRenderer : MonoBehaviour
+    [RequireComponent(typeof(SimulationController))]
+    public class TerrainRenderer2 : MonoBehaviour
     {
         [SerializeField] private Mesh mesh;
         [SerializeField] private Material material;
         [SerializeField] private Color terrain, compacted, stable, unstable, powder;
         [SerializeField] private float4 renderBox = new (0f, 1f, 0f, 1f);
         [SerializeField] private float scale = 1000;
-        [SerializeField] private float snowScale = 10;
-        [SerializeField] private int2 highlightDebug = -1;
     
         private doubleF _heightfield;
         private double4F _snowfield;
@@ -49,7 +45,8 @@ namespace TFM.Components
         private const int kExtraBytes = kSizeOfMatrix * 2;
         private const int kSizeRow = 505;
         private const int kSizeLayer = kSizeRow * kSizeRow;
-        private const int kNumInstances = kSizeLayer * 5;
+        private const int kNumInstances = kSizeLayer * 2;
+        private const float kSizeBox = 8.5f;
 
         private JobHandle _jobHandle = default;
 
@@ -58,9 +55,9 @@ namespace TFM.Components
 
         private void Start()
         {
-            var sim = GetComponent<ISnowSimulation>();
-            _heightfield = sim.Heightfield;
-            _snowfield = sim.Snowfield;
+            var sim = GetComponent<SimulationController>();
+            _heightfield = sim.height;
+            _snowfield = sim.snow;
 
             _objectToWorld = new NativeArray<float3x4>(kNumInstances, Allocator.Persistent);
             _worldToObject = new NativeArray<float3x4>(kNumInstances, Allocator.Persistent);
@@ -82,7 +79,7 @@ namespace TFM.Components
 
         private void PopulateInstanceDataBuffer()
         {
-            var zero = new [] { float4x4.zero };
+            var zero = new float4x4[1] { float4x4.zero };
 
             var ctmj = new InitMatrices
             {
@@ -95,13 +92,9 @@ namespace TFM.Components
             var jh = ctmj.Schedule(kSizeLayer, default);
             
             _colors = new NativeArray<float4>(kNumInstances, Allocator.Persistent);
-            for (int i = 0; i < kSizeLayer; i++)
+            for (int i = 0; i < kNumInstances; i++)
             {
-                _colors[i] = math.float4(terrain.r, terrain.g, terrain.b, terrain.a);
-                _colors[i + kSizeLayer] = math.float4(compacted.r, compacted.g, compacted.b, compacted.a);
-                _colors[i + kSizeLayer * 2] = math.float4(stable.r, stable.g, stable.b, stable.a);
-                _colors[i + kSizeLayer * 3] = math.float4(unstable.r, unstable.g, unstable.b, unstable.a);
-                _colors[i + kSizeLayer * 4] = math.float4(powder.r, powder.g, powder.b, powder.a);
+                _colors[i] = math.float4(0);
             }
             
             _byteAddressObjectToWorld = kSizeOfPackedMatrix * 2;
@@ -118,7 +111,7 @@ namespace TFM.Components
             var metadata = new NativeArray<MetadataValue>(3, Allocator.Temp);
             metadata[0] = new MetadataValue { NameID = Shader.PropertyToID("unity_ObjectToWorld"), Value = 0x80000000 | _byteAddressObjectToWorld, };
             metadata[1] = new MetadataValue { NameID = Shader.PropertyToID("unity_WorldToObject"), Value = 0x80000000 | _byteAddressWorldToObject, };
-            metadata[2] = new MetadataValue { NameID = Shader.PropertyToID("_BaseColor"), Value = 0x80000000 | _byteAddressColor, };
+            metadata[2] = new MetadataValue { NameID = Shader.PropertyToID("_Levels"), Value = 0x80000000 | _byteAddressColor, };
             
             m_BatchID = m_BRG.AddBatch(metadata, m_InstanceData.bufferHandle);
         }
@@ -138,38 +131,17 @@ namespace TFM.Components
             m_InstanceData.Dispose();
             _worldToObject.Dispose();
             _objectToWorld.Dispose();
-            _colors.Dispose();
         }
 
         private void Update()
         {
-            /*var csj = new CopySnowLevels
+            var csj = new CopySnowLevels
             {
                 levels = _colors.GetSubArray(kSizeLayer, kSizeLayer),
                 snowfield = _snowfield
             };
             
-            var csh = csj.ScheduleParallel(kSizeLayer, 256, default);*/
-
-            if (math.all(highlightDebug > -1))
-            {
-                var rp = new RenderParams(material);
-                rp.matProps = new MaterialPropertyBlock();
-                rp.matProps.SetColor("_BaseColor", Color.green);
-
-                var h = (float)_heightfield[highlightDebug];
-                h += (float)math.csum(_snowfield[highlightDebug]);
-                var cs = (float)_heightfield.cellSize.x;
-
-
-                var m = Matrix4x4.TRS(
-                    new Vector3(highlightDebug.x * cs + cs * 0.5f, h * 0.5f + 0.1f, highlightDebug.y * cs + cs * 0.5f) / scale,
-                    Quaternion.identity,
-                    new Vector3(cs, h, cs) / scale
-                );
-                
-                Graphics.RenderMesh(rp, mesh, 0, m);
-            }
+            var csh = csj.ScheduleParallel(kSizeLayer, 256, default);
             
             var cmj = new ComputeMatrices
             {
@@ -177,16 +149,15 @@ namespace TFM.Components
                 snowfield = _snowfield,
                 objectToWorld = _objectToWorld,
                 worldToObject = _worldToObject,
-                scale = 1f / scale,
-                snowScale = snowScale,
+                scale = 1f / 1000f,
             };
             var cmh = cmj.ScheduleParallel(kSizeLayer, 256, default);
             
-            cmh.Complete();
+            JobHandle.CombineDependencies(cmh, csh).Complete();
             
-            m_InstanceData.SetData(_objectToWorld, kSizeLayer, (int)(_byteAddressObjectToWorld / kSizeOfPackedMatrix) + kSizeLayer, kSizeLayer * 4);
-            m_InstanceData.SetData(_worldToObject, kSizeLayer, (int)(_byteAddressWorldToObject / kSizeOfPackedMatrix) + kSizeLayer, kSizeLayer * 4);
-            //m_InstanceData.SetData(_colors, kSizeLayer, (int)(_byteAddressColor / kSizeOfFloat4) + kSizeLayer, kSizeLayer);
+            m_InstanceData.SetData(_objectToWorld, kSizeLayer, (int)(_byteAddressObjectToWorld / kSizeOfPackedMatrix) + kSizeLayer, kSizeLayer);
+            m_InstanceData.SetData(_worldToObject, kSizeLayer, (int)(_byteAddressWorldToObject / kSizeOfPackedMatrix) + kSizeLayer, kSizeLayer);
+            m_InstanceData.SetData(_colors, kSizeLayer, (int)(_byteAddressColor / kSizeOfFloat4) + kSizeLayer, kSizeLayer);
         }
 
         private unsafe JobHandle OnPerformCulling(
@@ -235,7 +206,7 @@ namespace TFM.Components
                 heightfield = _heightfield,
                 visibleCount = &drawCommands->drawCommands[0].visibleCount,
                 visibleInstances = drawCommands->visibleInstances,
-                renderBox = renderBox,
+                renderBox = renderBox
             };
             var jh = job.Schedule(kSizeLayer, default);
             return jh;
@@ -251,24 +222,19 @@ namespace TFM.Components
             public void Execute(int index)
             {
                 var ij = heightfield.cell(index);
-                var h = heightfield[index];
+                var h = heightfield[index] * 0.5;
                 var c = heightfield.cellSize;
-                var t = (float3)math.double3(c * 0.5f + c * ij, h * 0.5).xzy * scale;
-                var s = (float3)math.double3(heightfield.cellSize, h).xzy * scale;
+                var t = (float3)math.double3(c * 0.5f + c * ij, h).xzy * scale;
+                var s = (float3)math.double3(heightfield.cellSize, h * 2).xzy * scale;
                 var m = float4x4.TRS(t, quaternion.identity, s);
                 objectToWorld[index] = m.xyz();
                 worldToObject[index] = math.inverse(m).xyz();
                 
-                for (int i = 0; i < 4; i++)
-                {
-                    index += kSizeLayer;
-                    t = (float3)math.double3(c * 0.5f + c * ij, h + c.x).xzy * scale;
-                    s = (float3)math.double3(heightfield.cellSize, c.x * 2).xzy * scale;
-                    m = float4x4.TRS(t, quaternion.identity, s);
-                    objectToWorld[index] = m.xyz();
-                    worldToObject[index] = math.inverse(m).xyz();
-                    h += c.x * 2;
-                }
+                t.y += (float)(h + 2 * c.x) * scale;
+                s.y = (float)(c.x * 4) * scale;
+                m = float4x4.TRS(t, quaternion.identity, s);
+                objectToWorld[index + kSizeLayer] = m.xyz();
+                worldToObject[index + kSizeLayer] = math.inverse(m).xyz();
             }
         }
 
@@ -277,7 +243,7 @@ namespace TFM.Components
         {
             [ReadOnly] public doubleF heightfield;
             [ReadOnly] public double4F snowfield;
-            public float scale, snowScale;
+            public float scale;
             [NativeDisableContainerSafetyRestriction] public NativeArray<float3x4> objectToWorld, worldToObject;
 
         
@@ -286,23 +252,14 @@ namespace TFM.Components
                 var ij = heightfield.cell(index);
                 var h = heightfield[index];
                 var c = heightfield.cellSize;
-                var l = snowfield[index] * snowScale;
-
-                for (int i = 0; i < 4; i++)
-                {
-                    index += kSizeLayer;
-                    var t = (float3)math.double3(c * 0.5f + c * ij, h + l[i] * 0.5).xzy * scale;
-                    var s = (float3)math.double3(heightfield.cellSize, l[i]).xzy * scale;
-                    var m = float4x4.TRS(t, quaternion.identity, s);
-                    objectToWorld[index] = m.xyz();
-                    worldToObject[index] = math.inverse(m).xyz();
-                    //objectToWorld[index] = Matrix(t, s);
-                    //worldToObject[index] = Matrix(-t / s, 1 / s);
-                    h += l[i];
-                }
+                var l = math.csum(snowfield[index]);
+                
+                var t = (float3)math.double3(c * 0.5f + c * ij, h + l * 0.5).xzy * scale;
+                var s = (float3)math.double3(heightfield.cellSize, l).xzy * scale;
+                objectToWorld[index + kSizeLayer] = Matrix(t, s);
+                worldToObject[index + kSizeLayer] = Matrix(-t / s, 1 / s);
             }
 
-            [MethodImpl(MethodImplOptions.AggressiveInlining)]        
             private float3x4 Matrix(float3 t, float3 s)
             {
                 return math.float3x4(
@@ -342,11 +299,7 @@ namespace TFM.Components
                 if (math.any(c < renderBox.xz * heightfield.dimension | c > renderBox.yw * heightfield.dimension)) return;
                 var j = *visibleCount;
                 visibleInstances[j++] = index;
-                var m = snowfield[index] > 0.001;
-                if (m.x) visibleInstances[j++] = index + kSizeLayer;
-                if (m.y) visibleInstances[j++] = index + kSizeLayer * 2;
-                if (m.z) visibleInstances[j++] = index + kSizeLayer * 3;
-                if (m.w) visibleInstances[j++] = index + kSizeLayer * 4;
+                if (math.any(snowfield[index] > 0)) visibleInstances[j++] = index + kSizeLayer;
                 *visibleCount = j;
             }
         }

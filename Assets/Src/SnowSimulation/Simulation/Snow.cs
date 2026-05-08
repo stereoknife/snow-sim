@@ -3,6 +3,7 @@ using HPML;
 using TFM.Utils;
 using Unity.Burst;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
@@ -15,14 +16,14 @@ namespace TFM.Simulation
         public struct Parameters
         {
             // Snowfall
-            public double SnowfallMinHeight;        // m
-            public double SnowfallStrength;         // day⁻¹
-            public double SnowfallMax;              // m
-            public double SnowfallPowderRatio;      // ratio
-            public double SnowfallUnstableRatio;    // ratio
-            public double CriticalSlopeMin;         // ratio
-            public double CriticalSlopeTempFactor;  // °C⁻¹
-            public double CriticalSlopeMaxTemp;     // °C
+            public double SnowfallMinHeight; //------- m
+            public double SnowfallStrength; //-------- day⁻¹
+            public double SnowfallMax; //------------- m
+            public double SnowfallPowderRatio; //----- scalar
+            public double SnowfallUnstableRatio; //--- scalar
+            public double CriticalSlopeMin; //-------- ratio
+            public double CriticalSlopeTempFactor; //- °C⁻¹
+            public double CriticalSlopeMaxTemp; //---- °C
             
             // Temp
             public double TempBase;                 // °C
@@ -47,6 +48,13 @@ namespace TFM.Simulation
             
             // Wind
             public double WindPlates;
+            
+            // Avalanche
+            public double AvalancheSnowDensity;                  // g/cm^-3
+            public double AvalancheSnowViscosity;               // s^-2
+            public double AvalancheRestSlope;
+            public double AvalancheGravity;
+            public double AvalancheTemp;
 
             public static Parameters Default => new()
             {
@@ -73,6 +81,11 @@ namespace TFM.Simulation
                 DiffusionRestSlope = 0.5,
                 DiffusionRate = 0.5,
                 WindPlates = 0.1,
+                AvalancheSnowDensity = 0.5,
+                AvalancheRestSlope = 0,//tan(radians(30)),
+                AvalancheGravity = 9.81,
+                AvalancheSnowViscosity = 0.0005,
+                AvalancheTemp = 0.5,
             };
         }
         
@@ -89,7 +102,7 @@ namespace TFM.Simulation
         [BurstCompile]
         private struct SnowfallJob : IJobFor
         {
-            [NativeDisableParallelForRestriction] public double4F snow;
+            public double4F snow;
             [ReadOnly] public doubleF height, temperature;
             public double step;
             public double sfPerDay, sfMinHeight, sfMax, sfPowderRatio, sfUnstableRatio;
@@ -194,7 +207,7 @@ namespace TFM.Simulation
                 }
                 else
                 {
-                    stability = remap(stabStableTemp, stabFreeze, stabMedium, stabFreeze, temperature);
+                    stability = remap(stabStableTemp, stabFreezeTemp, stabMedium, stabFreeze, temperature);
                     stability = clamp(stability, stabFreeze, stabMedium);
                 }
 
@@ -424,6 +437,201 @@ namespace TFM.Simulation
                 d.x = min(d.x, stable - unstability);
                 d.y = stable - unstability - d.x;
                 snow[index] = d;
+            }
+        }
+
+        #endregion
+
+
+        #region Avalanche
+
+        public static void Avalanche(double4F snow, double4F flow, doubleF height, NativeBitArray moving, double dt, ref Parameters P)
+        {
+            //new AvalancheFlowJob(snow, flow, flow, height, moving, dt, ref P).Run(snow.Length);
+            //new AvalancheScaleJob(snow, flow, flow, moving, dt).Run(snow.Length);
+            //new AvalancheJob(snow, flow, moving, dt).Run(snow.Length);
+        }
+        
+        public static JobHandle Avalanche(double4F snow, double4F flow, doubleF height, NativeBitArray moving, double dt, ref Parameters P, JobHandle dependsOn)
+        {
+            /*
+            var flow2 = new double4F(flow, Allocator.TempJob);
+            dependsOn = new AvalancheFlowJob(snow, flow, flow2, height, moving, dt, ref P)
+                .Schedule(snow.Length, dependsOn);
+            dependsOn = new AvalancheScaleJob(snow, flow2, flow, moving, dt)
+                .Schedule(snow.Length, dependsOn);
+            dependsOn = new AvalancheJob(snow, flow, moving, dt)
+                .Schedule(snow.Length, dependsOn);
+            flow2.Dispose(dependsOn);
+            */
+            return dependsOn;
+        }
+        
+        public static JobHandle AvalancheParallel(double4F snow, NativeArray<double> flow, doubleF height, NativeArray<bool> moving, double dt, ref Parameters P, JobHandle dependsOn)
+        {
+            dependsOn = new AvalancheJobUpdateMoving
+                {
+                    Height = height,
+                    Snow = snow,
+                    Flow = flow,
+                    Density = P.AvalancheSnowDensity,
+                    Gravity = P.AvalancheGravity,
+                    Dt = dt,
+                    Moving = moving,
+                    RestSlope = P.AvalancheRestSlope,
+                    KViscosity = P.AvalancheSnowViscosity,
+                    Temp = P.AvalancheTemp
+                }
+                .ScheduleParallel(height.Length, 64, dependsOn);
+
+            dependsOn = new AvalancheJobUpdateMoving2
+                {
+                    Snow = snow,
+                    Flow = flow,
+                    Dt = dt,
+                    Moving = moving,
+                }
+                .ScheduleParallel(height.Length, 64, dependsOn);
+
+            return dependsOn;
+        }
+        
+        private static readonly int2x4 Dirs = new int2x4(int2(0, 1), int2(-1, 1), int2(0, 1), int2(1, 1));
+        
+        // TODO: Reduce size of flow if possible, clean up branches and stuff
+        [BurstCompile]
+        private struct AvalancheJobUpdateMoving : IJobFor
+        {
+            [ReadOnly] public doubleF Height;
+            [ReadOnly] public double4F Snow;
+            [NativeDisableParallelForRestriction] public NativeArray<double> Flow;
+            [ReadOnly] public NativeArray<bool> Moving;
+            public double Density, Gravity, Dt, RestSlope, KViscosity, Temp;
+            
+            public void Execute(int index)
+            {
+                var ij = Height.cell(index);
+                var h = Height[index];
+                var s = Snow[index];
+                h += csum(s);
+
+                var start = ij - 1;
+                var end = ij + 2;
+
+                var c = square(Height.cellSize.x);
+                var moving = Moving[index];
+                
+                if (index == Snow.index(249, 247))
+                {
+                    var a = 0;
+                }
+
+                var of = 0d;
+                for (int i = start.x, k = 0; i < end.x; i++)
+                {
+                    for (int j = start.y; j < end.y; j++, k++)
+                    {
+                        if (k == 4) continue;
+                        var ii = i < 0
+                            ? -i
+                            : i > Height.dimension.x - 1
+                                ? 2 * (Height.dimension.x - 1) - i
+                                : i;
+                        var jj = j < 0
+                            ? -j
+                            : j > Height.dimension.y - 1
+                                ? 2 * (Height.dimension.y - 1) - j
+                                : j;
+                        
+                        var nh = Height[ii, jj];
+                        var ns = Snow[ii, jj];
+                        nh += csum(ns);
+                        
+                        var pressure = Density * Gravity * (h - nh);
+                        var dist = i == 0 || j == 0 ? Height.iCellSize.x : Height.iCellSize.x * SQRT2_DBL;
+                        var acc = pressure / Density * dist;
+                        var flow = Flow[index * 9 + k];
+                        flow += acc * c * Dt;
+                        
+                        var friction = Gravity * RestSlope * c * Dt * Temp;
+                        friction = min(abs(flow), friction);
+                        flow += friction * -sign(flow);
+                        
+                        var viscosity = -KViscosity * flow * c * Dt * (1 - Temp);
+                        flow += select(viscosity, -flow, abs(viscosity) > abs(flow));
+
+                        var nmoving = Moving[Snow.index(ii, jj)];
+                        if (flow < 0 && !nmoving) flow = 0;
+                        moving |= flow < 0 && nmoving;
+                        
+                        of += max(0, flow);
+                        Flow[index * 9 + k] = flow;
+                    }
+                }
+
+                if (!moving)
+                {
+                    for (int k = 0; k < 9; k++)
+                    {
+                        Flow[index * 9 + k] = 0;
+                    }
+                    of = 0;
+                }
+
+                var scale = square(Height.cellSize.x) * Snow[index].z;
+                scale = select(1, scale / of, of > scale);
+                Flow[index * 9 + 4] = scale;
+            }
+        }
+        
+        [BurstCompile]
+        private struct AvalancheJobUpdateMoving2 : IJobFor
+        {
+            public double4F Snow;
+            [NativeDisableParallelForRestriction] public NativeArray<double> Flow;
+            public double Dt;
+            [WriteOnly] public NativeArray<bool> Moving;
+            
+            public void Execute(int index)
+            {
+                var ij = Snow.cell(index);
+                var start = ij - 1;
+                var end = ij + 2;
+                
+                var tf = 0d;
+                var scale = Flow[index * 9 + 4];
+
+                var moving = false;
+                for (int i = start.x, k = 0; i < end.x; i++)
+                {
+                    for (int j = start.y; j < end.y; j++, k++)
+                    {
+                        if (k == 4) continue;
+                        
+                        var ii = i < 0
+                            ? -i
+                            : i > Snow.dimension.x - 1
+                                ? 2 * (Snow.dimension.x - 1) - i
+                                : i;
+                        var jj = j < 0
+                            ? -j
+                            : j > Snow.dimension.y - 1
+                                ? 2 * (Snow.dimension.y - 1) - j
+                                : j;
+                        
+                        var ni = Snow.index(ii, jj);
+                        var flow = Flow[index * 9 + k];
+                        flow *= select(Flow[ni * 9 + 4], scale, flow > 0);
+                        tf += Flow[index * 9 + k] = flow;
+                        moving |= abs(flow) > 1.0e-6f;
+                    }
+                }
+
+                var s = Snow[index];
+                s.z -= Dt * square(Snow.iCellSize.x) * tf;
+                s.z = max(s.z, 0);
+                Snow[index] = s;
+                Moving[index] = moving;
             }
         }
 
