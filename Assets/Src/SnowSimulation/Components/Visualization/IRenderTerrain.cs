@@ -1,8 +1,8 @@
 using HPML;
 
-namespace TFM.Components.Solvers
+namespace TFM.Components.Visualization
 {
-    public interface ISnowSimulation
+    public interface IRenderTerrain
     {
         public doubleF Heightfield { get; }
         public double4F Snowfield { get; }

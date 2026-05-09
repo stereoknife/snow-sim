@@ -82,7 +82,7 @@ namespace TFM.Simulation
                 DiffusionRate = 0.5,
                 WindPlates = 0.1,
                 AvalancheSnowDensity = 0.5,
-                AvalancheRestSlope = 0,//tan(radians(30)),
+                AvalancheRestSlope = tan(radians(30)),
                 AvalancheGravity = 9.81,
                 AvalancheSnowViscosity = 0.0005,
                 AvalancheTemp = 0.5,
@@ -372,20 +372,21 @@ namespace TFM.Simulation
         {
             [NativeDisableParallelForRestriction] public double4F snow;
             [ReadOnly] public double3F wind;
-            [ReadOnly] public doubleF altitude, height;
+            [ReadOnly] public doubleF windAltitude;
+            [ReadOnly] public doubleF height;
             private double stabMinSlope, unstableFactor, step;
 
             // Add parameter
             private double windPlates;
             public int stage;
 
-            public TransportJob(double4F snow, double3F wind, doubleF altitude, doubleF height, double step, ref Parameters P)
+            public TransportJob(double4F snow, double3F wind, doubleF windAltitude, doubleF height, double step, ref Parameters P)
             {
                 this.snow = snow;
                 this.wind = wind;
-                this.altitude = altitude;
                 this.height = height;
                 this.step = step;
+                this.windAltitude = windAltitude;
                 stabMinSlope = P.StabilityMinSlope;
                 unstableFactor = P.SnowfallUnstableRatio;
                 windPlates = P.WindPlates;
@@ -404,7 +405,7 @@ namespace TFM.Simulation
                 var snowAmt = csum(d);
                 
                 var erosion = clamp(curv, 0, min(snowAmt, 1));
-                erosion = clamp(height[index] + snowAmt - altitude[index], 0, erosion);
+                erosion = clamp(height[index] + snowAmt - windAltitude[index], 0, erosion);
                 snowAmt -= erosion;
 
                 var windDir = (int2)sign(wind[index].xz);
@@ -430,7 +431,7 @@ namespace TFM.Simulation
                 
                 var slope = cmax(field.slope(height, snow, ij));
                 var xuns = max(0, slope - stabMinSlope) * unstableFactor;
-                // TODO: This can be precomputed
+
                 var windTerrain = dot(wind[index].xz, field.cgradient(wind, index).c1);
                 var unstability = min(stable, xuns * max(0, windTerrain) * windPlates);
                 d.z += unstability;
@@ -520,11 +521,6 @@ namespace TFM.Simulation
 
                 var c = square(Height.cellSize.x);
                 var moving = Moving[index];
-                
-                if (index == Snow.index(249, 247))
-                {
-                    var a = 0;
-                }
 
                 var of = 0d;
                 for (int i = start.x, k = 0; i < end.x; i++)

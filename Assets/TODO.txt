@@ -9,19 +9,27 @@ Heightfield:
             [x] Ambient occlusion - line based thingy!
             [x] Indirect bounce
         [x] Wind
-    [ ] Simulation
-        [x] Snowfall
-        [x] Melt
-        [x] Stability
-        [x] Diffusion
-        [ ] Transport
-        [ ] Avalanche
         
+Simulation:
+    [x] Snowfall
+    [x] Melt
+    [x] Stability
+    [x] Diffusion
+    [x] Transport
+    [/] Avalanche
+        [ ] Make it neater (reduce computations from 8 to 4)
+        [ ] Incorporate to bigger simulation
+    [ ] Other solvers:
+        [ ] Small random updates every frame
+        [ ] Separate heightfield into tiles and update only the necessary ones
         
 Other:
     [x] Change heightfield from km to m
     [x] Change snowfield from cm to m
     [x] Change wind from km to m
     [ ] Separate instancing into 2 commands, for terrain and snow
-        [ ] Give terrain white/bottom layer colour if it's snowed on
-    [ ] Check performance on a larger (1024^2) grid
+        - [ ] Give terrain white/bottom layer colour if it's snowed on
+    [x] Check performance on a larger (1024^2) grid (it's bad)
+    [ ] Optimize drawing
+        [ ] Group into bounding boxes and check those
+        [ ] Bounding box hierarchy perhaps?

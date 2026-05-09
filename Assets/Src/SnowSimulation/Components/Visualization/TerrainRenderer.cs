@@ -1,7 +1,6 @@
 using System;
 using System.Runtime.CompilerServices;
 using HPML;
-using TFM.Components.Solvers;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -10,7 +9,7 @@ using Unity.Mathematics;
 using UnityEngine;
 using UnityEngine.Rendering;
 
-namespace TFM.Components
+namespace TFM.Components.Visualization
 {
 
     public class TerrainRenderer : MonoBehaviour
@@ -47,9 +46,9 @@ namespace TFM.Components
         private const int kSizeOfFloat4 = sizeof(float) * 4;
         private const int kBytesPerInstance = (kSizeOfPackedMatrix * 2) + kSizeOfFloat4;
         private const int kExtraBytes = kSizeOfMatrix * 2;
-        private const int kSizeRow = 505;
-        private const int kSizeLayer = kSizeRow * kSizeRow;
-        private const int kNumInstances = kSizeLayer * 5;
+
+        private int kSizeLayer;
+        private int kNumInstances;
 
         private JobHandle _jobHandle = default;
 
@@ -58,9 +57,12 @@ namespace TFM.Components
 
         private void Start()
         {
-            var sim = GetComponent<ISnowSimulation>();
+            var sim = GetComponent<IRenderTerrain>();
             _heightfield = sim.Heightfield;
             _snowfield = sim.Snowfield;
+
+            kSizeLayer = _heightfield.dimension.x * _heightfield.dimension.y;
+            kNumInstances = kSizeLayer * 5;
 
             _objectToWorld = new NativeArray<float3x4>(kNumInstances, Allocator.Persistent);
             _worldToObject = new NativeArray<float3x4>(kNumInstances, Allocator.Persistent);
@@ -105,8 +107,8 @@ namespace TFM.Components
             }
             
             _byteAddressObjectToWorld = kSizeOfPackedMatrix * 2;
-            _byteAddressWorldToObject = _byteAddressObjectToWorld + kSizeOfPackedMatrix * kNumInstances;
-            _byteAddressColor = _byteAddressWorldToObject + kSizeOfPackedMatrix * kNumInstances;
+            _byteAddressWorldToObject = _byteAddressObjectToWorld + kSizeOfPackedMatrix * (uint)kNumInstances;
+            _byteAddressColor = _byteAddressWorldToObject + kSizeOfPackedMatrix * (uint)kNumInstances;
             
             jh.Complete();
             
@@ -213,7 +215,7 @@ namespace TFM.Components
             drawCommands->instanceSortingPositionFloatCount = 0;
             
             drawCommands->drawCommands[0].visibleOffset = 0;
-            drawCommands->drawCommands[0].visibleCount = kSizeLayer;
+            drawCommands->drawCommands[0].visibleCount = (uint)kSizeLayer;
             drawCommands->drawCommands[0].batchID = m_BatchID;
             drawCommands->drawCommands[0].materialID = m_MaterialID;
             drawCommands->drawCommands[0].meshID = m_MeshID;
@@ -258,10 +260,11 @@ namespace TFM.Components
                 var m = float4x4.TRS(t, quaternion.identity, s);
                 objectToWorld[index] = m.xyz();
                 worldToObject[index] = math.inverse(m).xyz();
+                int ioffset = heightfield.dimension.x * heightfield.dimension.y;
                 
                 for (int i = 0; i < 4; i++)
                 {
-                    index += kSizeLayer;
+                    index += ioffset;
                     t = (float3)math.double3(c * 0.5f + c * ij, h + c.x).xzy * scale;
                     s = (float3)math.double3(heightfield.cellSize, c.x * 2).xzy * scale;
                     m = float4x4.TRS(t, quaternion.identity, s);
@@ -287,10 +290,11 @@ namespace TFM.Components
                 var h = heightfield[index];
                 var c = heightfield.cellSize;
                 var l = snowfield[index] * snowScale;
+                int ioffset = heightfield.dimension.x * heightfield.dimension.y;
 
                 for (int i = 0; i < 4; i++)
                 {
-                    index += kSizeLayer;
+                    index += ioffset;
                     var t = (float3)math.double3(c * 0.5f + c * ij, h + l[i] * 0.5).xzy * scale;
                     var s = (float3)math.double3(heightfield.cellSize, l[i]).xzy * scale;
                     var m = float4x4.TRS(t, quaternion.identity, s);
@@ -338,15 +342,16 @@ namespace TFM.Components
             
             public void Execute(int index)
             {
+                int ioffset = heightfield.dimension.x * heightfield.dimension.y;
                 var c = heightfield.cell(index);
                 if (math.any(c < renderBox.xz * heightfield.dimension | c > renderBox.yw * heightfield.dimension)) return;
                 var j = *visibleCount;
                 visibleInstances[j++] = index;
                 var m = snowfield[index] > 0.001;
-                if (m.x) visibleInstances[j++] = index + kSizeLayer;
-                if (m.y) visibleInstances[j++] = index + kSizeLayer * 2;
-                if (m.z) visibleInstances[j++] = index + kSizeLayer * 3;
-                if (m.w) visibleInstances[j++] = index + kSizeLayer * 4;
+                if (m.x) visibleInstances[j++] = index + ioffset;
+                if (m.y) visibleInstances[j++] = index + ioffset * 2;
+                if (m.z) visibleInstances[j++] = index + ioffset * 3;
+                if (m.w) visibleInstances[j++] = index + ioffset * 4;
                 *visibleCount = j;
             }
         }

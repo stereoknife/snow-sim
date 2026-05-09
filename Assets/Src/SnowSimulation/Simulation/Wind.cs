@@ -115,44 +115,36 @@ namespace TFM.Simulation
 
         #region Wind Effect Surface
         
-        public static void WindEffectSurface(double3F wind, doubleF height, doubleF altitude, doubleF vspeed, ref Parameters P)
+        public static void WindEffectSurface(double3F wind, doubleF height, doubleF altitude, ref Parameters P)
         {
             for (int i = 0; i < wind.Length; i++)
             {
                 altitude[i] = height[i];
-                vspeed[i] = dot(wind[i].xz, field.gradient(height, i));
+                var w = wind[i];
+                w.y = dot(w.xz, field.gradient(height, i));
+                wind[i] = w;
             }
 
-            var job = new WindEffectSurfaceJob(wind, height, height, altitude, vspeed, 0, ref P);
+            var job = new WindEffectSurfaceJob(wind, height, height, altitude, 0, ref P);
             for (int i = 0; i < P.SurfaceMaxIterations * 2; i++)
             {
                 job.iteration = i;
                 job.Run(wind.Length);
             }
-
-            for (int i = 0; i < wind.Length; i++)
-            {
-                var w = wind[i];
-                w.y = vspeed[i];
-                wind[i] = w;
-            }
         }
 
         public static JobHandle WindEffectSurface(double3F wind, doubleF height, doubleF altitude,
-            doubleF vspeed, ref Parameters P, JobHandle dependsOn)
+            ref Parameters P, JobHandle dependsOn)
         {
-            var init = new InitializeWESValuesJob(wind, height, altitude, vspeed);
+            var init = new InitializeWESValuesJob(wind, height, altitude);
             dependsOn = init.Schedule(wind.Length, dependsOn);
             
-            var job = new WindEffectSurfaceJob(wind, height, height, altitude, vspeed, 0, ref P);
+            var job = new WindEffectSurfaceJob(wind, height, height, altitude, 0, ref P);
             for (int i = 0; i < P.SurfaceMaxIterations * 2; i++)
             {
                 job.iteration = i;
                 dependsOn = job.ScheduleParallel(wind.Length, 64, dependsOn);
             }
-
-            var finalize = new FinalizeWESJob(wind, vspeed);
-            dependsOn = finalize.Schedule(wind.Length, dependsOn);
 
             return dependsOn;
         }
@@ -160,46 +152,24 @@ namespace TFM.Simulation
         [BurstCompile]
         public struct InitializeWESValuesJob : IJobFor
         {
-            [ReadOnly] public double3F wind;
+            public double3F wind;
             [ReadOnly] public doubleF height, gaussian;
-            public doubleF altitude, vspeed;
+            public doubleF altitude;
 
-            public InitializeWESValuesJob(double3F wind, doubleF height, doubleF altitude, doubleF vspeed)
+            public InitializeWESValuesJob(double3F wind, doubleF height, doubleF altitude)
             {
                 this.wind = wind;
                 this.height = height;
                 this.altitude = altitude;
-                this.vspeed = vspeed;
                 gaussian = height;
             }
             
             public void Execute(int index)
             {
                 altitude[index] = height[index];
-                vspeed[index] = dot(wind[index].xz, field.gradient(gaussian, index));
-                if (isnan(vspeed[index]))
-                {
-                    var a = 0;
-                }
-            }
-        }
-        
-        [BurstCompile]
-        public struct FinalizeWESJob : IJobFor
-        {
-            public double3F wind;
-            [ReadOnly] public doubleF vspeed;
-
-            public FinalizeWESJob(double3F wind, doubleF vspeed)
-            {
-                this.wind = wind;
-                this.vspeed = vspeed;
-            }
-            
-            public void Execute(int index)
-            {
                 var w = wind[index];
-                w.y = vspeed[index];
+                var vspeed = dot(w.xz, field.gradient(gaussian, index));
+                w.y = vspeed;
                 wind[index] = w;
             }
         }
@@ -209,19 +179,17 @@ namespace TFM.Simulation
         {
             [NativeDisableParallelForRestriction] public double3F wind;
             [NativeDisableParallelForRestriction] public doubleF altitude;
-            [NativeDisableParallelForRestriction] public doubleF vspeed;
             [ReadOnly] public doubleF height, gaussian;
             public double falloff;
             public int iteration;
 
             public WindEffectSurfaceJob(double3F wind, doubleF height, doubleF gaussian, doubleF altitude,
-                doubleF vspeed, int iteration, ref Parameters P)
+                int iteration, ref Parameters P)
             {
                 this.wind = wind;
                 this.height = height;
                 this.gaussian = gaussian;
                 this.altitude = altitude;
-                this.vspeed = vspeed;
                 this.iteration = iteration;
                 falloff = P.SurfaceFalloff;
             }
@@ -232,34 +200,32 @@ namespace TFM.Simulation
                 
                 var cell = height.cell(index);
                 
-                var w = wind[cell].xz;
-                var n = cell - (int2)sign(w);
-                w = abs(w);
+                var wdir = wind[cell].xz;
+                var n = cell - (int2)sign(wdir);
+                wdir = abs(wdir);
                 
                 if (any(n < 0) || any(n > wind.dimension - 1)) return;
 
                 var alt_n = double2(altitude[n.x, cell.y], altitude[cell.x, n.y]);
-                var spd_n = double2(vspeed[n.x, cell.y], vspeed[cell.x, n.y]);
+                var spd_n = double2(wind[n.x, cell.y].y, wind[cell.x, n.y].y);
 
-                var spd = mad(-falloff, wind.cellSize.x, dot(w, spd_n)) / csum(w);
-                var alt = mad(spd, wind.cellSize.x, dot(w, alt_n)) / csum(w);
+                var spd = mad(-falloff, wind.cellSize.x, dot(wdir, spd_n)) / csum(wdir);
+                var alt = mad(spd, wind.cellSize.x, dot(wdir, alt_n)) / csum(wdir);
 
-                if (csum(w) < 0.001)
+                if (csum(wdir) < 0.001)
                     alt = -999999;
                 
                 if (alt <= height[index])
                 {
                     var grad = (gaussian[index] - double2(gaussian[n.x, cell.y], gaussian[cell.x, n.y])) * gaussian.iCellSize;
-                    spd = dot(w, grad);
+                    spd = dot(wdir, grad);
                     alt = height[index];
                 }
-
-                if (alt - height[index] > 100)
-                {
-                    var a = 0;
-                } 
+                
                 altitude[index] = alt;
-                vspeed[index] = spd;
+                var w = wind[index];
+                w.y = spd;
+                wind[index] = w;
             }
         }
     }

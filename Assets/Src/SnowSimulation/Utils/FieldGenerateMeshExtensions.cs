@@ -45,15 +45,6 @@ namespace TFM.Utils
             
             dependsOn = ijob.Schedule(field.Length, dependsOn);
             dependsOn.Complete();
-
-            for (int i = 0; i < idx.Length; i++)
-            {
-                if (i != 0 && idx[i] == 0)
-                {
-                    var cell = field.cell(i / 6);
-                    var a = 0;
-                }
-            }
             
             md.subMeshCount = 1;
             md.SetSubMesh(0, new SubMeshDescriptor(0, idx_ct));

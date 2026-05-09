@@ -13,7 +13,7 @@ using static Unity.Mathematics.math;
 
 namespace TFM.Components
 {
-    public class WindSource : MonoBehaviour
+    public class WindSim : MonoBehaviour
     {
         [SerializeField][Range(0, 360)] private double windHeading;
         [SerializeField] private double windSpeedAtBase;
@@ -89,15 +89,12 @@ namespace TFM.Components
                 height = _height,
                 gaussian = _height,
                 wind = _wind,
-                altitude = _altr,
-                vspeed = _spdr
+                altitude = _alts
             };
-            var jh3 = init.ScheduleParallel(_height.Length, 256, jh0);
-            init.altitude = _alts;
-            init.vspeed = _spds;
+            //var jh3 = init.ScheduleParallel(_height.Length, 256, jh0);
             init.gaussian = _gaussianHeight;
             var jh4 = init.ScheduleParallel(_height.Length, 256, JobHandle.CombineDependencies(jh0, jh2));
-            JobHandle.CombineDependencies(jh1, jh3, jh4).Complete();
+            JobHandle.CombineDependencies(jh1, jh4).Complete();
 
             Mesh.ApplyAndDisposeWritableMeshData(mda_rt, rtm);
             rtm.RecalculateBounds();
@@ -124,10 +121,9 @@ namespace TFM.Components
                 height = _height,
                 gaussian = _gaussianHeight,
                 wind = _wind,
-                altitude = _alts,
-                vspeed = _spds,
                 falloff = Wind.Parameters.Default.SurfaceFalloff,
-                iteration = 0
+                iteration = 0,
+                altitude = _alts
             };
         }
 
@@ -137,12 +133,11 @@ namespace TFM.Components
         {
             Mesh.MeshDataArray rmda = default, smda = default;
             JobHandle sjh = default, rjh = default;
+            updateRoughWind = false;
             
             if (updateSmoothWind)
             {
                 wej.gaussian = _gaussianHeight;
-                wej.vspeed = _spds;
-                wej.altitude = _alts;
                 sjh = wej.ScheduleParallel(_wind.Length, 64, sjh);
                 wej.iteration++;
                 sjh = wej.ScheduleParallel(_wind.Length, 64, sjh);
@@ -155,8 +150,6 @@ namespace TFM.Components
             if (updateRoughWind)
             {
                 wej.gaussian = _height;
-                wej.vspeed = _spdr;
-                wej.altitude = _altr;
                 rjh = wej.ScheduleParallel(_wind.Length, 64, rjh);
                 wej.iteration++;
                 rjh = wej.ScheduleParallel(_wind.Length, 64, rjh);
@@ -214,19 +207,10 @@ namespace TFM.Components
                         double w = exp(-lengthsq(d) * smooth);
                         norm += w;
                         r += height[j, k] * w;
-
-                        if (r <= 0.00001)
-                        {
-                            var a = 0;
-                        }
                     }
                 }
 
                 gaussian[index] = r / norm;
-                if (isnan(gaussian[index]))
-                {
-                    var a = 0;
-                }
             }
         }
 

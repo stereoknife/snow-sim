@@ -130,6 +130,8 @@ GameObject:
   - component: {fileID: 1274040615}
   - component: {fileID: 1274040614}
   - component: {fileID: 1274040613}
+  - component: {fileID: 1274040617}
+  - component: {fileID: 1274040616}
   m_Layer: 0
   m_Name: Main Camera
   m_TagString: MainCamera
@@ -211,6 +213,67 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1274040616
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1274040612}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 618b0e3f6c65dd247a4a016150006c57, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Core.Runtime::UnityEngine.Rendering.FreeCamera
+  m_LookSpeedController: 120
+  m_LookSpeedMouse: 20
+  m_MoveSpeed: 10
+  m_MoveSpeedIncrement: 2.5
+  m_Turbo: 10
+--- !u!114 &1274040617
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1274040612}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a79441f348de89743a2939f4d699eac1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalCameraData
+  m_RenderShadows: 1
+  m_RequiresDepthTextureOption: 2
+  m_RequiresOpaqueTextureOption: 2
+  m_CameraType: 0
+  m_Cameras: []
+  m_RendererIndex: -1
+  m_VolumeLayerMask:
+    serializedVersion: 2
+    m_Bits: 1
+  m_VolumeTrigger: {fileID: 0}
+  m_VolumeFrameworkUpdateModeOption: 2
+  m_RenderPostProcessing: 0
+  m_Antialiasing: 0
+  m_AntialiasingQuality: 2
+  m_StopNaN: 0
+  m_Dithering: 0
+  m_ClearDepth: 1
+  m_AllowXRRendering: 1
+  m_AllowHDROutput: 1
+  m_UseScreenCoordOverride: 0
+  m_ScreenSizeOverride: {x: 0, y: 0, z: 0, w: 0}
+  m_ScreenCoordScaleBias: {x: 0, y: 0, z: 0, w: 0}
+  m_RequiresDepthTexture: 0
+  m_RequiresColorTexture: 0
+  m_TaaSettings:
+    m_Quality: 3
+    m_FrameInfluence: 0.1
+    m_JitterScale: 1
+    m_MipBias: 0
+    m_VarianceClampScale: 0.9
+    m_ContrastAdaptiveSharpening: 0
+  m_Version: 2
 --- !u!1 &1578955770
 GameObject:
   m_ObjectHideFlags: 0
@@ -370,10 +433,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TerrainGen
   heightmap: {fileID: 2800000, guid: 479c9c5b126d64d83b8135612b36cca2, type: 3}
-  sizeX: 8.5
-  sizeZ: 8.5
-  height: 3.3
-  units: 1000
+  sizeX: 830
+  sizeZ: 830
+  height: 330
+  units: 1
 --- !u!4 &1921804214
 Transform:
   m_ObjectHideFlags: 0
@@ -403,18 +466,18 @@ MonoBehaviour:
   m_EditorClassIdentifier: SnowSimulation::TFM.TerrainRenderer
   mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
   material: {fileID: 2100000, guid: 3a1f2a5c9cac049c79abd90db5187f0d, type: 2}
-  terrain: {r: 0.4245283, g: 0.4245283, b: 0.4245283, a: 1}
+  terrain: {r: 0.33962262, g: 0.33962262, b: 0.33962262, a: 1}
   compacted: {r: 0.3809185, g: 0.42026573, b: 0.754717, a: 1}
   stable: {r: 0.495283, g: 0.97261226, b: 1, a: 1}
-  unstable: {r: 1, g: 0.2688679, b: 0.2688679, a: 1}
+  unstable: {r: 1, g: 1, b: 1, a: 1}
   powder: {r: 1, g: 1, b: 1, a: 1}
   renderBox:
     x: 0
     y: 1
     z: 0
     w: 1
-  scale: 1000
-  snowScale: 10
+  scale: 100
+  snowScale: 1
   highlightDebug:
     x: 291
     y: 269
@@ -430,7 +493,15 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6067d296b85c4087b938df06f049b120, type: 3}
   m_Name: 
   m_EditorClassIdentifier: SnowSimulation::TFM.Components.AvalancheSim
-  simSpeed: 4
+  simSpeed: 1
+  startingSnow:
+    x: 0
+    y: 0
+    z: 3
+    w: 0
+  rupturePoint:
+    x: 249
+    y: 243
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

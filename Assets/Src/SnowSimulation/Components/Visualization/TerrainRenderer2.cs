@@ -56,8 +56,8 @@ namespace TFM.Components
         private void Start()
         {
             var sim = GetComponent<SimulationController>();
-            _heightfield = sim.height;
-            _snowfield = sim.snow;
+            _heightfield = sim.Heightfield;
+            _snowfield = sim.Snowfield;
 
             _objectToWorld = new NativeArray<float3x4>(kNumInstances, Allocator.Persistent);
             _worldToObject = new NativeArray<float3x4>(kNumInstances, Allocator.Persistent);
