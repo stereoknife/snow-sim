@@ -445,6 +445,19 @@ namespace TFM.Simulation
 
 
         #region Avalanche
+        
+        /*
+         *   0, 3, 5
+         *   1,  , 6
+         *   2, 4, 7
+         */
+        
+        private const int kStride = 4;
+        private const int kLoop = kStride;
+        private const double kEpsilon = 1e-6;
+        private static readonly int2x4 Dirs = int2x4(int2(-1, -1), int2(-1, 0), int2(-1, 1), int2(0, -1));
+        private static readonly int4x2 DirsT = transpose(Dirs);
+        private static readonly bool4 Perp = DirsT.c0 == 0 | DirsT.c1 == 0;
 
         public static void Avalanche(double4F snow, double4F flow, doubleF height, NativeBitArray moving, double dt, ref Parameters P)
         {
@@ -470,11 +483,12 @@ namespace TFM.Simulation
         
         public static JobHandle AvalancheParallel(double4F snow, NativeArray<double> flow, doubleF height, NativeArray<bool> moving, double dt, ref Parameters P, JobHandle dependsOn)
         {
-            dependsOn = new AvalancheJobUpdateMoving
+            dependsOn = new AvalancheFlowJob
                 {
                     Height = height,
                     Snow = snow,
-                    Flow = flow,
+                    FlowR = flow.GetSubArray(0, snow.Length * kStride),
+                    FlowW = flow.GetSubArray(snow.Length * kStride, snow.Length * kStride),
                     Density = P.AvalancheSnowDensity,
                     Gravity = P.AvalancheGravity,
                     Dt = dt,
@@ -484,11 +498,19 @@ namespace TFM.Simulation
                     Temp = P.AvalancheTemp
                 }
                 .ScheduleParallel(height.Length, 64, dependsOn);
-
-            dependsOn = new AvalancheJobUpdateMoving2
+            
+            dependsOn = new AvalancheScaleJob
                 {
                     Snow = snow,
-                    Flow = flow,
+                    FlowW = flow.GetSubArray(0, snow.Length * kStride),
+                    FlowR = flow.GetSubArray(snow.Length * kStride, snow.Length * kStride),
+                }
+                .ScheduleParallel(height.Length, 64, dependsOn);
+
+            dependsOn = new AvalancheSnowJob
+                {
+                    Snow = snow,
+                    Flow = flow.GetSubArray(0, snow.Length * kStride),
                     Dt = dt,
                     Moving = moving,
                 }
@@ -497,15 +519,13 @@ namespace TFM.Simulation
             return dependsOn;
         }
         
-        private static readonly int2x4 Dirs = new int2x4(int2(0, 1), int2(-1, 1), int2(0, 1), int2(1, 1));
-        
-        // TODO: Reduce size of flow if possible, clean up branches and stuff
         [BurstCompile]
-        private struct AvalancheJobUpdateMoving : IJobFor
+        private struct AvalancheFlowJob : IJobFor
         {
             [ReadOnly] public doubleF Height;
             [ReadOnly] public double4F Snow;
-            [NativeDisableParallelForRestriction] public NativeArray<double> Flow;
+            [NativeDisableContainerSafetyRestriction][ReadOnly] public NativeArray<double> FlowR;
+            [NativeDisableContainerSafetyRestriction][WriteOnly] public NativeArray<double> FlowW;
             [ReadOnly] public NativeArray<bool> Moving;
             public double Density, Gravity, Dt, RestSlope, KViscosity, Temp;
             
@@ -516,72 +536,98 @@ namespace TFM.Simulation
                 var s = Snow[index];
                 h += csum(s);
 
-                var start = ij - 1;
-                var end = ij + 2;
-
                 var c = square(Height.cellSize.x);
                 var moving = Moving[index];
 
-                var of = 0d;
-                for (int i = start.x, k = 0; i < end.x; i++)
+                double4 nflow = 0, nh = 0, ns = 0;
+                bool4 nmov = false;
+                for (int k = 0; k < kLoop; k++)
                 {
-                    for (int j = start.y; j < end.y; j++, k++)
-                    {
-                        if (k == 4) continue;
-                        var ii = i < 0
-                            ? -i
-                            : i > Height.dimension.x - 1
-                                ? 2 * (Height.dimension.x - 1) - i
-                                : i;
-                        var jj = j < 0
-                            ? -j
-                            : j > Height.dimension.y - 1
-                                ? 2 * (Height.dimension.y - 1) - j
-                                : j;
-                        
-                        var nh = Height[ii, jj];
-                        var ns = Snow[ii, jj];
-                        nh += csum(ns);
-                        
-                        var pressure = Density * Gravity * (h - nh);
-                        var dist = i == 0 || j == 0 ? Height.iCellSize.x : Height.iCellSize.x * SQRT2_DBL;
-                        var acc = pressure / Density * dist;
-                        var flow = Flow[index * 9 + k];
-                        flow += acc * c * Dt;
-                        
-                        var friction = Gravity * RestSlope * c * Dt * Temp;
-                        friction = min(abs(flow), friction);
-                        flow += friction * -sign(flow);
-                        
-                        var viscosity = -KViscosity * flow * c * Dt * (1 - Temp);
-                        flow += select(viscosity, -flow, abs(viscosity) > abs(flow));
+                    var nij = ij - Dirs[k];
+                    nij = select(nij, -nij, nij < 0);
+                    nij = select(nij, 2 * (Snow.dimension - 1) - nij, nij > Snow.dimension - 1);
+                    nflow[k] = FlowR[Snow.index(nij) * kStride + k];
+                    
+                    nij = ij + Dirs[k];
+                    nij = select(nij, -nij, nij < 0);
+                    nij = select(nij, 2 * (Snow.dimension - 1) - nij, nij > Snow.dimension - 1);
 
-                        var nmoving = Moving[Snow.index(ii, jj)];
-                        if (flow < 0 && !nmoving) flow = 0;
-                        moving |= flow < 0 && nmoving;
-                        
-                        of += max(0, flow);
-                        Flow[index * 9 + k] = flow;
-                    }
+                    nh[k] = Height[nij];
+                    ns[k] = csum(Snow[nij]);
+                    nmov[k] = Moving[Snow.index(nij)];
                 }
 
-                if (!moving)
-                {
-                    for (int k = 0; k < 9; k++)
-                    {
-                        Flow[index * 9 + k] = 0;
-                    }
-                    of = 0;
-                }
-
-                var scale = square(Height.cellSize.x) * Snow[index].z;
-                scale = select(1, scale / of, of > scale);
-                Flow[index * 9 + 4] = scale;
+                nh += ns;
+                moving |= any(nflow > kEpsilon);
+                var flow = FlowR.ReinterpretLoad<double4>(index * kStride);
+                
+                var pressure = Density * Gravity * (h - nh);
+                var dist = select(Height.iCellSize.x * SQRT2_DBL, Height.iCellSize.x, Perp);
+                var acc = pressure / Density * dist;
+                flow += acc * c * Dt;
+                        
+                double4 friction = Gravity * RestSlope * c * Dt * Temp;
+                friction = min(abs(flow), friction);
+                flow += friction * -sign(flow);
+                        
+                var viscosity = -KViscosity * flow * c * Dt * (1 - Temp);
+                flow += select(viscosity, -flow, abs(viscosity) > abs(flow));
+                
+                moving |= any(flow < 0 & nmov);
+                flow = select(flow, 0, flow < 0 & !nmov);
+                flow = select(0, flow, moving);
+                
+                FlowW.ReinterpretStore(index * kStride, select(0, flow, moving));
             }
         }
         
         [BurstCompile]
-        private struct AvalancheJobUpdateMoving2 : IJobFor
+        private struct AvalancheScaleJob : IJobFor
+        {
+            [ReadOnly] public double4F Snow;
+            [NativeDisableContainerSafetyRestriction][ReadOnly] public NativeArray<double> FlowR;
+            [NativeDisableContainerSafetyRestriction][WriteOnly] public NativeArray<double> FlowW;
+            
+            public void Execute(int index)
+            {
+                var ij = Snow.cell(index);
+                
+                var flow = FlowR.ReinterpretLoad<double4>(index * kStride);
+                double4 nflow = 0;
+                var nix = int4(0, 1, 2, 3);
+                
+                for (int k = 0; k < kLoop; k++)
+                {
+                    var nij = ij - Dirs[k];
+                    nij = select(nij, -nij, nij < 0);
+                    nij = select(nij, 2 * (Snow.dimension - 1) - nij, nij > Snow.dimension - 1);
+                    nix[k] += Snow.index(nij) * kStride;
+                    nflow[k] = FlowR[nix[k]];
+                }
+
+                var of = csum(max(0, flow) - min(0, nflow));
+                var scale = square(Snow.cellSize.x) * Snow[index].z;
+                scale = select(1, scale / of, of > scale);
+
+                flow *= scale;
+                nflow *= scale;
+                
+                for (int k = 0; k < kLoop; k++)
+                {
+                    if (flow[k] > 0)
+                    {
+                        FlowW[index * kStride + k] = flow[k];
+                    }
+                    if (nflow[k] <= 0)
+                    {
+                        FlowW[nix[k]] = nflow[k];
+                    }
+                }
+            }
+        }
+        
+        [BurstCompile]
+        private struct AvalancheSnowJob : IJobFor
         {
             public double4F Snow;
             [NativeDisableParallelForRestriction] public NativeArray<double> Flow;
@@ -591,40 +637,24 @@ namespace TFM.Simulation
             public void Execute(int index)
             {
                 var ij = Snow.cell(index);
-                var start = ij - 1;
-                var end = ij + 2;
-                
-                var tf = 0d;
-                var scale = Flow[index * 9 + 4];
-
                 var moving = false;
-                for (int i = start.x, k = 0; i < end.x; i++)
+
+                var flow = Flow.ReinterpretLoad<double4>(index * kStride);
+                double4 nflow = 0;
+                
+                for (int k = 0; k < kLoop; k++)
                 {
-                    for (int j = start.y; j < end.y; j++, k++)
-                    {
-                        if (k == 4) continue;
-                        
-                        var ii = i < 0
-                            ? -i
-                            : i > Snow.dimension.x - 1
-                                ? 2 * (Snow.dimension.x - 1) - i
-                                : i;
-                        var jj = j < 0
-                            ? -j
-                            : j > Snow.dimension.y - 1
-                                ? 2 * (Snow.dimension.y - 1) - j
-                                : j;
-                        
-                        var ni = Snow.index(ii, jj);
-                        var flow = Flow[index * 9 + k];
-                        flow *= select(Flow[ni * 9 + 4], scale, flow > 0);
-                        tf += Flow[index * 9 + k] = flow;
-                        moving |= abs(flow) > 1.0e-6f;
-                    }
+                    var nij = ij - Dirs[k];
+                    nij = select(nij, -nij, nij < 0);
+                    nij = select(nij, 2 * (Snow.dimension - 1) - nij, nij > Snow.dimension - 1);
+                    nflow[k] = -Flow[Snow.index(nij) * kStride + k];
                 }
 
+                flow += nflow;
+                moving |= any(abs(flow) > kEpsilon);
+
                 var s = Snow[index];
-                s.z -= Dt * square(Snow.iCellSize.x) * tf;
+                s.z -= Dt * square(Snow.iCellSize.x) * csum(flow);
                 s.z = max(s.z, 0);
                 Snow[index] = s;
                 Moving[index] = moving;
