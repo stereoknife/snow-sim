@@ -44,7 +44,7 @@ namespace TFM.Components
             // Init fields
             _height = doubleF.FromTexture(terrain.heightmap, terrainSize, Allocator.Persistent);
             _temperature = new doubleF(_height, Allocator.Persistent);
-            _snow = new double4F(_height, Allocator.Persistent, 2);
+            _snow = new double4F(_height, Allocator.Persistent, 0);
             _wind = new double3F(_height, Allocator.Persistent, double3(right() * 10));
             _flow = new double4F(_height, Allocator.Persistent);
             _windAltitude = new doubleF(_height, Allocator.Persistent);

@@ -3,6 +3,7 @@ using HPML;
 using TFM.Components.Visualization;
 using TFM.Simulation;
 using Unity.Collections;
+using Unity.Jobs.LowLevel.Unsafe;
 using Unity.Mathematics;
 using UnityEngine;
 using static Unity.Mathematics.math;
@@ -21,6 +22,7 @@ namespace TFM.Components
         private double4F _snow;
         private NativeArray<double> _flow;
         private NativeArray<bool> _moving;
+        private NativeArray<int4> _bounds;
         private Snow.Parameters _parameters = Snow.Parameters.Default;
 
         public doubleF Heightfield => _height;
@@ -34,6 +36,7 @@ namespace TFM.Components
             _snow = new double4F(_height, Allocator.Persistent, startingSnow);
             _flow = new NativeArray<double>(_height.Length * 9, Allocator.Persistent);
             _moving = new NativeArray<bool>(_height.Length, Allocator.Persistent);
+            _bounds = new NativeArray<int4>(JobsUtility.JobWorkerCount + 1, Allocator.Persistent);
         }
 
         [Button]
@@ -61,6 +64,7 @@ namespace TFM.Components
             _snow.Dispose();
             _flow.Dispose();
             _moving.Dispose();
+            _bounds.Dispose();
         }
     }
 }
