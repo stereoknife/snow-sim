@@ -48,6 +48,7 @@ namespace TFM.Simulation
             
             // Wind
             public double WindPlates;
+            public double WindErosionRate;
             
             // Avalanche
             public double AvalancheSnowDensity;                  // g/cm^-3
@@ -81,6 +82,7 @@ namespace TFM.Simulation
                 DiffusionRestSlope = 0.5,
                 DiffusionRate = 0.5,
                 WindPlates = 0.1,
+                WindErosionRate = 0.1,
                 AvalancheSnowDensity = 0.5,
                 AvalancheRestSlope = tan(radians(30)),
                 AvalancheGravity = 9.81,
@@ -102,7 +104,7 @@ namespace TFM.Simulation
         [BurstCompile]
         private struct SnowfallJob : IJobFor
         {
-            public double4F snow;
+            [NativeDisableParallelForRestriction] public double4F snow;
             [ReadOnly] public doubleF height, temperature;
             public double step;
             public double sfPerDay, sfMinHeight, sfMax, sfPowderRatio, sfUnstableRatio;
@@ -129,7 +131,7 @@ namespace TFM.Simulation
             
             public void Execute(int index)
             {
-                var slope = cmax(field.gradient(height, index));
+                var slope = cmax(field.gradient(height, snow, index));
                 
                 // Get amount of snow that has fallen on this cell
                 var airTemp = (height[index] - sfMinHeight) * 0.01;
@@ -138,7 +140,7 @@ namespace TFM.Simulation
                 var cs = csMin + csTempFactor * max(0d, csMaxTemp - temperature[index] - baseTemp);
                 
                 // Ratio of powder snow
-                var xpow = saturate(sfPowderRatio - cs);
+                var xpow = saturate(sfPowderRatio * (slope - cs));
                 // Ratio of unstable snow
                 var xuns = clamp((slope - stabMinSlope) * sfUnstableRatio, 0d, 1d - xpow);
                 // Ratio of stable snow
@@ -223,7 +225,7 @@ namespace TFM.Simulation
                 var compaction = select(snow.x / stable, 0, stable < 0.0001);
                 snow.w += melt; // powder
                 snow.z += min(0, snow.w); // unstable
-                snow.y += min(0, snow.z /* * (1 - compaction) * meltCompactionEffect*/); // stable
+                snow.y += min(0, snow.z /* * (1 - compaction) * meltCompactionEffect */); // stable
                 snow.x += min(0, snow.y);
                 snow = select(snow, 0, snow < 0.001);
                 
@@ -374,7 +376,7 @@ namespace TFM.Simulation
             [ReadOnly] public double3F wind;
             [ReadOnly] public doubleF windAltitude;
             [ReadOnly] public doubleF height;
-            private double stabMinSlope, unstableFactor, step;
+            private double stabMinSlope, unstableFactor, step, windErosion;
 
             // Add parameter
             private double windPlates;
@@ -390,6 +392,7 @@ namespace TFM.Simulation
                 stabMinSlope = P.StabilityMinSlope;
                 unstableFactor = P.SnowfallUnstableRatio;
                 windPlates = P.WindPlates;
+                windErosion = P.WindErosionRate;
                 stage = 0;
             }
             
@@ -404,8 +407,8 @@ namespace TFM.Simulation
                 var d = snow[index];
                 var snowAmt = csum(d);
                 
-                var erosion = clamp(curv, 0, min(snowAmt, 1));
-                erosion = clamp(height[index] + snowAmt - windAltitude[index], 0, erosion);
+                var erosion = clamp(curv * windErosion * step, 0, min(snowAmt, 1));
+                erosion = clamp(height[index] + snowAmt - windAltitude[index], 0, erosion) * step;
                 snowAmt -= erosion;
 
                 var windDir = (int2)sign(wind[index].xz);
