@@ -1,3 +1,5 @@
+using System;
+using System.IO;
 using EasyButtons;
 using HPML;
 using TFM.Components.Visualization;
@@ -27,6 +29,8 @@ namespace TFM.Components
 
         public doubleF Heightfield => _height;
         public double4F Snowfield => _snow;
+        
+        private (float, double)[] _profilingData;
 
         private void Awake()
         {
@@ -37,6 +41,7 @@ namespace TFM.Components
             _flow = new NativeArray<double>(_height.Length * 9, Allocator.Persistent);
             _moving = new NativeArray<bool>(_height.Length, Allocator.Persistent);
             _bounds = new NativeArray<int4>(JobsUtility.JobWorkerCount + 1, Allocator.Persistent);
+            _profilingData = new (float, double)[100];
         }
 
         [Button]
@@ -51,11 +56,34 @@ namespace TFM.Components
                     _moving[_snow.index(i, j)] = true;
                 }
             }
+
+            stepn = 0;
         }
+
+        private int stepn = 200;
 
         private void Update()
         {
+            var preTime = DateTime.Now;
             Snow.AvalancheParallel(_snow, _flow, _height, _moving, Time.deltaTime * simSpeed, ref _parameters, default).Complete();
+            var postTime = DateTime.Now;
+
+            if (stepn == 100)
+            {
+                stepn++;
+                var file = Path.Combine(Application.dataPath, "results", "avalanche_1024.csv");
+                using var writer = new StreamWriter(File.Open(file, FileMode.Create));
+                writer.WriteLine("number, event, time, duration");
+                var totalDuration = 0d;
+                for (int i = 0; i < _profilingData.Length; i++)
+                {
+                    var (time, duration) = _profilingData[i];
+                    writer.WriteLine($"{i},{time},{duration}");
+                }
+                Debug.Log("Done");
+            }
+            else if (stepn < 100)
+                _profilingData[stepn++] = (Time.unscaledTime, (postTime - preTime).TotalMilliseconds);
         }
 
         private void OnDestroy()

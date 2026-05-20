@@ -1,14 +1,14 @@
 using System;
+using System.Collections;
+using System.IO;
+using EasyButtons;
 using HPML;
 using TFM.Components.Solvers;
 using TFM.Components.Visualization;
 using Unity.Collections;
 using UnityEngine;
-using Utils;
-using Random = Unity.Mathematics.Random;
 using static Unity.Mathematics.math;
 using TFM.Simulation;
-using TFM.Utils;
 using Unity.Burst;
 using Unity.Jobs;
 using Unity.Mathematics;
@@ -18,8 +18,20 @@ namespace TFM.Components
     [RequireComponent(typeof(Terrain), typeof(Sun), typeof(Weather))]
     public class SimulationController : MonoBehaviour, IRenderTerrain
     {
-        [SerializeField] private float timeMultiplier = 1f;
-        [SerializeField] private bool fastForward;
+        [SerializeField] private double4 initialSnowValue;
+        [Header("Events")]
+        [SerializeField] private bool snowfall;
+        [SerializeField] private bool windTransport;
+        [SerializeField] private bool melting;
+        [SerializeField] private bool powderDiffusion;
+        [SerializeField] private bool avalanche;
+        [Header("Profiling")]
+        [SerializeField] private bool enableProfiling;
+        [SerializeField] private string outputFile;
+        [SerializeField][Min(1)] private int bufferSize;
+        [Header("Run parameters")]
+        [SerializeField] private int frames;
+        [SerializeField] private float time;
         
         private doubleF _height;
         private doubleF _temperature;
@@ -31,8 +43,79 @@ namespace TFM.Components
         public doubleF Heightfield => _height;
         public double4F Snowfield => _snow;
 
-        private MonolithicSimulation _simulation;
+        private StochasticSimulation _simulation;
+
+        [Button]
+        private void RunFrames()
+        {
+            _simulation.Reset();
+            StartCoroutine(RunFramesCR());
+        }
         
+        [Button]
+        private void RunTime()
+        {
+            _simulation.Reset();
+            StartCoroutine(RunTimeCR());
+        }
+
+        [Button]
+        private void Reset()
+        {
+            for (int i = 0; i < _snow.Length; i++)
+            {
+                _snow[i] = initialSnowValue;
+            }
+        }
+        
+        [Button]
+        private void ExportProfilingData()
+        {
+            _simulation.ExportProfilingData(Path.Combine(Application.dataPath, "results", $"{outputFile}.csv"));
+            Debug.Log($"File written at {outputFile}.csv");
+        }
+
+        private IEnumerator RunFramesCR()
+        {
+            for (int i = 0; i < frames; i++)
+            {
+                _simulation.Step();
+                yield return null;
+            }
+            Debug.Log("Done");
+        }
+        
+        private IEnumerator RunTimeCR()
+        {
+            for (;;)
+            {
+                _simulation.Step();
+                if (_simulation.simulationTime >= time) break;
+                yield return null;
+            }
+            Debug.Log("Done");
+        }
+
+        private void SetSimulationParams()
+        {
+            _simulation.SetEventEnabled(StochasticSimulation.EventId.MeltStep, melting);
+            _simulation.SetEventEnabled(StochasticSimulation.EventId.TransportStep, windTransport);
+            _simulation.SetEventEnabled(StochasticSimulation.EventId.DiffusionStep, powderDiffusion);
+            _simulation.SetEventEnabled(StochasticSimulation.EventId.SnowfallStep, snowfall);
+            _simulation.SetEventEnabled(StochasticSimulation.EventId.SnowfallStart, snowfall);
+            _simulation.SetEventEnabled(StochasticSimulation.EventId.SnowfallEnd, snowfall);
+            
+            if (enableProfiling)
+                _simulation.EnableProfiling(bufferSize);
+            else
+                _simulation.DisableProfiling();
+        }
+
+        private void OnValidate()
+        {
+            if (_simulation != null) SetSimulationParams();
+        }
+
         private void Awake()
         {
             var sun = GetComponent<Sun>();
@@ -44,7 +127,7 @@ namespace TFM.Components
             // Init fields
             _height = doubleF.FromTexture(terrain.heightmap, terrainSize, Allocator.Persistent);
             _temperature = new doubleF(_height, Allocator.Persistent);
-            _snow = new double4F(_height, Allocator.Persistent, 0);
+            _snow = new double4F(_height, Allocator.Persistent, initialSnowValue);
             _wind = new double3F(_height, Allocator.Persistent, double3(right() * 10));
             _flow = new double4F(_height, Allocator.Persistent);
             _windAltitude = new doubleF(_height, Allocator.Persistent);
@@ -70,23 +153,21 @@ namespace TFM.Components
             var all = JobHandle.CombineDependencies(ilh, wnd);
             all.Complete();
 
-            _simulation = new MonolithicSimulation(1337)
+            var p = Snow.Parameters.Default;
+            //p.TempBase = -15;
+            //p.SnowfallMinHeight = -1500; // Temp base / inc per metre
+
+            _simulation = new StochasticSimulation(1337)
             {
                 snow = _snow,
                 height = _height,
                 temperature = _temperature,
                 wind = _wind,
                 windAltitude = _windAltitude,
-                parameters = Snow.Parameters.Default,
+                parameters = p,
             };
-        }
-
-        private void Update()
-        {
-            if (fastForward)
-                _simulation.FastForward();
-            else
-                _simulation.Step(Time.deltaTime * timeMultiplier);
+            
+            SetSimulationParams();
         }
 
         private void OnDestroy()

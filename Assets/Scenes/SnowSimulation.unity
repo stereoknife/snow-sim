@@ -724,10 +724,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 252b380654ca14a379972e3aa3254e77, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TerrainGen
-  heightmap: {fileID: 2800000, guid: 479c9c5b126d64d83b8135612b36cca2, type: 3}
-  sizeX: 830
-  sizeZ: 830
-  height: 330
+  heightmap: {fileID: 2800000, guid: 91ac2bc7cccfe43d9abf3a44ada89d24, type: 3}
+  sizeX: 3500
+  sizeZ: 3500
+  height: 939
   units: 1
 --- !u!114 &1394619230
 MonoBehaviour:
@@ -815,8 +815,21 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3c11fc535e864c39bde69ba12201a1af, type: 3}
   m_Name: 
   m_EditorClassIdentifier: SnowSimulation::TFM.Components.SnowSimulation
-  timeMultiplier: 1
-  fastForward: 0
+  initialSnowValue:
+    x: 1
+    y: 1
+    z: 1
+    w: 1
+  snowfall: 0
+  windTransport: 0
+  melting: 1
+  powderDiffusion: 0
+  avalanche: 0
+  enableProfiling: 1
+  outputFile: melt_1024
+  bufferSize: 100
+  frames: 100
+  time: 0
 --- !u!114 &1394619233
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -841,7 +854,7 @@ MonoBehaviour:
     y: 1
     z: 0
     w: 1
-  scale: 100
+  scale: 1000
   snowScale: 1
   highlightDebug:
     x: -1

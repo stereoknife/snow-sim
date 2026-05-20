@@ -268,5 +268,18 @@ namespace HPML
             ) * a.iCellSize * a.iCellSize;
         }
         //*/
+        
+        public static double2 gradient(in doubleF a, in double4F b, int at) => gradient(in a, in b, a.cell(at));
+        public static double2 gradient(in doubleF a, in double4F b, int2 at)
+        {
+            int2 up   = min(at + 1, a.dimension - 1);
+            int2 down = max(at - 1, 0);
+            double2 norm = a.iCellSize / (up - down);
+            
+            return new double2(
+                a[up.x, at.y] + csum(b[up.x, at.y]) - a[down.x, at.y] - csum(b[down.x, at.y]),
+                a[at.x, up.y] + csum(b[at.x, up.y]) - a[at.x, down.y] - csum(b[at.x, down.y])
+            ) * norm;
+        }
     }
 }
