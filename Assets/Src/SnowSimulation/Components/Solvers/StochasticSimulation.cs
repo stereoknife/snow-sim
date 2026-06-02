@@ -6,7 +6,6 @@ using HPML;
 using TFM.Simulation;
 using Unity.Collections;
 using Unity.Jobs;
-using Unity.Mathematics;
 using UnityEngine;
 using Random = Unity.Mathematics.Random;
 
@@ -32,34 +31,17 @@ namespace TFM.Components.Solvers
         private doubleF _height;
         private doubleF _temperature;
         private double4F _snow;
-        private double2F _wind;
+        private double2F _windDirection;
+        private doubleF _hazard;
         private ScalarField2D _windAltitude;
         private ScalarField2D _windTerrain;
+        private NativeArray<double> _flow;
+        private NativeArray<bool> _moving;
         
         private NativeArray<double> _tempTimeline;
         private NativeArray<double> _windTimeline;
         private NativeArray<double> _cloudTimeline;
         private NativeArray<double> _precipTimeline;
-        
-        private NativeArray<double> _flow;
-        private NativeArray<bool> _moving;
-        private doubleF _hazard;
-        
-        public Snow.Parameters parameters { set => _parameters = value; }
-        public doubleF height { set => _height = value; }
-        public doubleF temperature { set => _temperature = value; }
-        public double4F snow { set => _snow = value; }
-        public double2F wind { set => _wind = value; }
-        public ScalarField2D windAltitude { set => _windAltitude = value; }
-        public ScalarField2D windTerrain { set => _windTerrain = value; }
-        public NativeArray<double> tempTimeline { set => _tempTimeline = value; }
-        public NativeArray<double> windTimeline { set => _windTimeline = value; }
-        public NativeArray<double> cloudTimeline { set => _cloudTimeline = value; }
-        public NativeArray<double> precipTimeline { set => _precipTimeline = value; }
-        public NativeArray<double> flow { set => _flow = value; }
-        public NativeArray<bool> moving { set => _moving = value; }
-        public doubleF hazard {set => _hazard = value; }
-        public float simulationTime { get; private set; }
         
         private Random _rng;
         private readonly uint _seed;
@@ -72,7 +54,63 @@ namespace TFM.Components.Solvers
         private (EventId, float, double)[] _profilingData;
         private int _profilingDataIndex;
 
-        private bool _useTimeline = true;
+        private bool _usePrecipTimeline = true;
+        private bool _useCloudTimeline = true;
+        private bool _useWindTimeline = true;
+        private bool _useTempTimeline = true;
+        
+        public float simulationTime { get; private set; }
+        
+        public Snow.Parameters Parameters { set => _parameters = value; }
+        public doubleF Height { set => _height = value; }
+        public doubleF Temperature { set => _temperature = value; }
+        public double4F SnowLayers { set => _snow = value; }
+        public double2F WindDirection { set => _windDirection = value; }
+        public doubleF Hazard { set => _hazard = value; }
+        public ScalarField2D WindAltitude { set => _windAltitude = value; }
+        public ScalarField2D WindTerrain { set => _windTerrain = value; } 
+        public NativeArray<double> Flow { set => _flow = value; }
+        public NativeArray<bool> Moving { set => _moving = value; }
+        
+        public NativeArray<double> TempTimeline { set => _tempTimeline = value; }
+        public NativeArray<double> WindTimeline { set => _windTimeline = value; }
+        public NativeArray<double> CloudTimeline { set => _cloudTimeline = value; }
+        public NativeArray<double> PrecipTimeline { set => _precipTimeline = value; }
+
+        public void SetUsePrecipTimeline(bool value)
+        {
+            _usePrecipTimeline = value;
+            if (!_usePrecipTimeline)
+            {
+                _frequencies[EventId.SnowfallStart] = 1f / _periods[EventId.SnowfallStart];
+                _frequencies[EventId.SnowfallStep] = 0f;
+                _frequencies[EventId.SnowfallEnd] = 0f;
+                _parameters.SnowfallIntensity = 1f;
+            }
+        }
+        
+        public void SetUseWindTimeline(bool value)
+        {
+            _useWindTimeline = value;
+            if (!_useWindTimeline) _parameters.WindSpeed = _parameters.WindMaxSpeed;
+        }
+        
+        public void SetUseCloudTimeline(bool value)
+        {
+            _useCloudTimeline = value;
+            if (_useCloudTimeline) _parameters.CloudCover = 0f;
+        }
+        
+        public void SetUseTempTimeline(bool value)
+        {
+            _useTempTimeline = value;
+            if (!_useTempTimeline) _parameters.TempBase = 0f;
+        }
+        
+        public void SetEventEnabled(EventId id, bool enabled)
+        {
+            _enabled[id] = enabled;
+        }
         
         public StochasticSimulation(uint seed)
         {
@@ -106,12 +144,7 @@ namespace TFM.Components.Solvers
             _frequencies[EventId.SnowfallStep] = 0f;
             _frequencies[EventId.SnowfallEnd] = 0f;
             _frequencies[EventId.AvalancheStep] = 0f;
-            if (_useTimeline) _frequencies[EventId.SnowfallStart] = 0f;
-        }
-
-        public void SetEventEnabled(EventId id, bool enabled)
-        {
-            _enabled[id] = enabled;
+            if (_usePrecipTimeline) _frequencies[EventId.SnowfallStart] = 0f;
         }
 
         private EventId Next()
@@ -144,19 +177,20 @@ namespace TFM.Components.Solvers
         
         public void Step()
         {
-            if (_useTimeline)
-            {
-                if (simulationTime > _tempTimeline.Length) return;
-                
-                var low = (int)floor(simulationTime);
-                var high = (int)ceil(simulationTime);
-                var t = frac(simulationTime);
+            var low = (int)floor(simulationTime);
+            var high = (int)ceil(simulationTime);
+            var t = frac(simulationTime);
+            
+            if (_useTempTimeline)
                 _parameters.TempBase = lerp(_tempTimeline[low], _tempTimeline[high], t);
+            if (_useWindTimeline)
                 _parameters.WindSpeed = lerp(_windTimeline[low], _windTimeline[high], t);
+            if (_useCloudTimeline)
                 _parameters.CloudCover = lerp(_cloudTimeline[low], _cloudTimeline[high], t);
-                _parameters.SnowfallStrength = lerp(_precipTimeline[low], _precipTimeline[high], t);
-
-                if (_parameters.SnowfallStrength > 0.0000000001)
+            if (_usePrecipTimeline)
+            {
+                _parameters.SnowfallIntensity = lerp(_precipTimeline[low], _precipTimeline[high], t);
+                if (_parameters.SnowfallIntensity > 0.0000000001)
                     _frequencies[EventId.SnowfallStep] = 1f / _periods[EventId.SnowfallStep];
                 else
                     _frequencies[EventId.SnowfallStep] = 0f;
@@ -171,7 +205,7 @@ namespace TFM.Components.Solvers
                     jh = Snow.Melt(_snow, _temperature, _height, _periods[ev], ref _parameters, jh);
                     break;
                 case EventId.TransportStep:
-                    jh = Snow.Transport(_snow, _wind, _windAltitude, _windTerrain, _height, _periods[ev], ref _parameters, jh);
+                    jh = Snow.Transport(_snow, _windDirection, _windAltitude, _windTerrain, _height, _periods[ev], ref _parameters, jh);
                     break;
                 case EventId.DiffusionStep:
                     jh = Snow.Diffusion(_snow, _height, _periods[ev], ref _parameters, jh);
