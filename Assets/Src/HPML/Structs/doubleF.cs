@@ -1,6 +1,5 @@
 using System.Diagnostics.Contracts;
 using System.Runtime.CompilerServices;
-using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
@@ -13,7 +12,7 @@ using int2 = Unity.Mathematics.int2;
 namespace HPML
 {
     
-    public struct doubleF : INativeDisposable
+    public struct doubleF : INativeDisposable, IExportToTexture
     {
         public NativeArray<double> field;
         public int2 dimension;
@@ -21,16 +20,18 @@ namespace HPML
         public double2 cellSize => size.xz / dimension;
         public double2 iCellSize => dimension / size.xz;
         public int Length => field.Length;
-        
+
         public static doubleF FromTexture(Texture2D tex, double3 size, Allocator allocator)
         {
-            var output = new doubleF(new(tex.width, tex.height), size, allocator);
+            var dim = new int2(tex.width, tex.height);
+            var output = new doubleF(dim, size, allocator);
             var data = tex.GetRawTextureData<ushort>();
-            
-            // TODO: Move to job or something like that
+
             for (int i = 0; i < output.field.Length; i++)
             {
-                output.field[i] = size.y * (double)data[i] / (double)ushort.MaxValue;
+                //var c = dim - 1 - output.cell(i);
+                //output[c.y, c.x] = size.y * (double)data[i] / (double)ushort.MaxValue;
+                output[i] = size.y * (double)data[i] / (double)ushort.MaxValue;
             }
 
             return output;
@@ -42,6 +43,7 @@ namespace HPML
             dimension = sf.dimension;
             size = sf.size;
         }
+        
         public doubleF(int2 dimension, double3 size, Allocator allocator)
         {
             field = new NativeArray<double>(area(dimension), allocator);
@@ -104,20 +106,10 @@ namespace HPML
         
         public bool IsCreated => field.IsCreated;
         
-        
-        // Exports
-        // =======
-        public Texture2D NormalMap(bool makeNoLongerReadable = true)
-        {
-            var output = new Texture2D(dimension.x, dimension.y, TextureFormat.RGBA32, false);
-            var array = output.GetRawTextureData<Color32>();
-            for (int i = 0; i < array.Length; i++)
-            {
-                var n = (HPML.field.normal(this, i) * 0.5 + 0.5) * byte.MaxValue;
-                array[i] = new Color32((byte)n.x, (byte)n.z, (byte)n.y, byte.MaxValue);
-            }
-            output.Apply(false, makeNoLongerReadable);
-            return output;
-        }
+        public JobHandle ToTexture2D(Texture2D tex, JobHandle dependsOn)
+            => FieldTextureExport.DoubleFToTex(this, tex, dependsOn);
+
+        public void ToTexture2D(Texture2D tex)
+            => FieldTextureExport.DoubleFToTex(this, tex);
     }
 }

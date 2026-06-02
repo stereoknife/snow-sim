@@ -15,10 +15,10 @@ namespace TFM.Components
     public class AvalancheSim : MonoBehaviour, IRenderTerrain
     {
         [SerializeField] private float simSpeed = 1;
-        [SerializeField] private double4 startingSnow = new double4(0 , 0, 1, 0);
-        [SerializeField] private int2 rupturePoint = new int2(249, 243);
+        [SerializeField] private double4 startingSnow = new (0 , 0, 1, 0);
+        [SerializeField] private int2 rupturePoint = new (249, 243);
         
-        private Terrain _terrain;
+        private SimulationTerrain _simulationTerrain;
 
         private doubleF _height;
         private double4F _snow;
@@ -29,13 +29,15 @@ namespace TFM.Components
 
         public doubleF Heightfield => _height;
         public double4F Snowfield => _snow;
+        public NativeHashSet<int> SelectedPoints { get; }
+        public NativeHashSet<int> HighlightedPoints { get; }
         
         private (float, double)[] _profilingData;
 
         private void Awake()
         {
-            var terrain = GetComponent<Terrain>();
-            var terrainSize = double3(terrain.sizeX, terrain.height, terrain.sizeZ) * terrain.units;
+            var terrain = GetComponent<SimulationTerrain>();
+            var terrainSize = terrain.size * terrain.units;
             _height = doubleF.FromTexture(terrain.heightmap, terrainSize, Allocator.Persistent);
             _snow = new double4F(_height, Allocator.Persistent, startingSnow);
             _flow = new NativeArray<double>(_height.Length * 9, Allocator.Persistent);

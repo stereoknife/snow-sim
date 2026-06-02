@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Runtime.InteropServices;
 using HPML;
 using Unity.Burst;
 using Unity.Collections;
@@ -14,28 +15,42 @@ namespace TFM.Utils
 {
     public static class FieldGenerateMeshExtensions
     {
-        public static JobHandle GenerateMesh(this doubleF field, out Mesh.MeshDataArray mda, JobHandle dependsOn)
+        [StructLayout(LayoutKind.Sequential)]
+        private struct vtx
+        {
+            public float3 position, normal;
+            public float2 uv0, uv1;
+        }
+        
+        public static JobHandle GenerateMesh(this doubleF field, out Mesh.MeshDataArray mda, JobHandle dependsOn, double4F snow = default)
         {
             mda = Mesh.AllocateWritableMeshData(1);
             var md = mda[0];
 
+            var vad = new NativeArray<VertexAttributeDescriptor>(4, Allocator.Temp);
+            vad[0] = new VertexAttributeDescriptor(VertexAttribute.Position, dimension: 3, stream: 0);
+            vad[1] = new VertexAttributeDescriptor(VertexAttribute.Normal, dimension: 3, stream: 0);
+            vad[2] = new VertexAttributeDescriptor(VertexAttribute.TexCoord0, dimension: 2, stream: 0);
+            vad[3] = new VertexAttributeDescriptor(VertexAttribute.TexCoord1, dimension: 2, stream: 0);
+
             var idx_ct = vec.area(field.dimension - 1) * 6;
-            md.SetVertexBufferParams(field.Length,
-                new VertexAttributeDescriptor(VertexAttribute.Position),
-                new VertexAttributeDescriptor(VertexAttribute.Normal)
-            );
+            md.SetVertexBufferParams(field.Length, vad);
+            vad.Dispose();
             md.SetIndexBufferParams(idx_ct, IndexFormat.UInt32);
 
-            var verts = md.GetVertexData<float3x2>();
+            var verts = md.GetVertexData<vtx>();
             var idx = md.GetIndexData<uint>();
 
-            var vjob = new VerticesJob
+            if (snow.IsCreated)
             {
-                height = field,
-                vertices = verts,
-            };
-
-            dependsOn = vjob.Schedule(field.Length, dependsOn);
+                var vjob = new VerticesJob2 { height = field, vertices = verts, snow = snow };
+                dependsOn = vjob.Schedule(field.Length, dependsOn);
+            }
+            else
+            {
+                var vjob = new VerticesJob { height = field, vertices = verts };
+                dependsOn = vjob.Schedule(field.Length, dependsOn);
+            }
 
             var ijob = new IndicesJob()
             {
@@ -56,7 +71,8 @@ namespace TFM.Utils
         private struct VerticesJob : IJobFor
         {
             [ReadOnly] public doubleF height;
-            public NativeArray<float3x2> vertices;
+            //[ReadOnly] public double4F snow;
+            public NativeArray<vtx> vertices;
             
             public void Execute(int index)
             {
@@ -64,7 +80,41 @@ namespace TFM.Utils
                 var xz = height.cellSize * ij;
                 var v = (float3)double3(xz, height[index]).xzy;
                 var n = (float3)field.normal(height, index);
-                vertices[index] = float3x2(v, n);
+                var uv0 = (float2)height.cell(index) / (float2)(height.dimension - 1);
+                var uv1 = uv0;
+                //if (snow.IsCreated) uv1 = float2((float)csum(snow[index]));
+                vertices[index] = new vtx
+                {
+                    position = v,
+                    normal = n,
+                    uv0 = uv0,
+                    uv1 = uv1
+                };
+            }
+        }
+        
+        [BurstCompile]
+        private struct VerticesJob2 : IJobFor
+        {
+            [ReadOnly] public doubleF height;
+            [ReadOnly] public double4F snow;
+            public NativeArray<vtx> vertices;
+            
+            public void Execute(int index)
+            {
+                var ij = height.cell(index);
+                var xz = height.cellSize * ij;
+                var v = (float3)double3(xz, height[index]).xzy;
+                var n = (float3)field.normal(height, index);
+                var uv0 = (float2)height.cell(index) / (float2)(height.dimension - 1);
+                var uv1 = float2((float)csum(snow[index]));
+                vertices[index] = new vtx
+                {
+                    position = v,
+                    normal = n,
+                    uv0 = uv0,
+                    uv1 = uv1
+                };
             }
         }
         

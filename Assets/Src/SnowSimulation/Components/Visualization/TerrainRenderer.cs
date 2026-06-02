@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using HPML;
+using TFM.Utils;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -14,16 +16,25 @@ namespace TFM.Components.Visualization
 
     public class TerrainRenderer : MonoBehaviour
     {
+        [SerializeField] private bool drawTerrain = true;
+        [SerializeField] private bool drawSnow = true;
+        [SerializeField] private bool drawWind = false;
+        [SerializeField] private bool drawFinal = false;
+        [SerializeField][Range(1f, 10f)] private float windLevel;
+        [Header("Rendering properties")]
         [SerializeField] private Mesh mesh;
-        [SerializeField] private Material material;
+        [SerializeField] private Material layersMaterial, windMaterial, terrainMaterial;
         [SerializeField] private Color terrain, compacted, stable, unstable, powder;
         [SerializeField] private float4 renderBox = new (0f, 1f, 0f, 1f);
         [SerializeField] private float scale = 1000;
-        [SerializeField] private float snowScale = 10;
-        [SerializeField] private int2 highlightDebug = -1;
+        [SerializeField] private float snowScale = 1;
+
+        private NativeHashSet<int> _selectedPoints;
+        private NativeHashSet<int> _highlightedPoints;
     
         private doubleF _heightfield;
         private double4F _snowfield;
+        private ScalarField2D _wind;
 
         private BatchRendererGroup m_BRG;
 
@@ -51,15 +62,21 @@ namespace TFM.Components.Visualization
         private int kNumInstances;
 
         private JobHandle _jobHandle = default;
+        private RenderParams _rpHighlight, _rpWind, _rpFinal;
 
+        private float _prevWindLevel;
+        private Mesh _windMesh, _finalMesh;
         // The PackedMatrix is a convenience type that converts matrices into
         // the format that Unity-provided SRP shaders expect.
 
         private void Start()
         {
-            var sim = GetComponent<IRenderTerrain>();
+            var sim = GetComponent<SimulationController>();
             _heightfield = sim.Heightfield;
             _snowfield = sim.Snowfield;
+            _selectedPoints = sim.SelectedPoints;
+            _highlightedPoints = sim.HighlightedPoints;
+            _wind = sim.WindAltitude;
 
             kSizeLayer = _heightfield.dimension.x * _heightfield.dimension.y;
             kNumInstances = kSizeLayer * 5;
@@ -67,12 +84,52 @@ namespace TFM.Components.Visualization
             _objectToWorld = new NativeArray<float3x4>(kNumInstances, Allocator.Persistent);
             _worldToObject = new NativeArray<float3x4>(kNumInstances, Allocator.Persistent);
             
-            m_BRG = new BatchRendererGroup(this.OnPerformCulling, IntPtr.Zero);
+            m_BRG = new BatchRendererGroup(OnPerformCulling, IntPtr.Zero);
             m_MeshID = m_BRG.RegisterMesh(mesh);
-            m_MaterialID = m_BRG.RegisterMaterial(material);
+            m_MaterialID = m_BRG.RegisterMaterial(layersMaterial);
+            
+            m_BRG.SetGlobalBounds(new Bounds((float3)_heightfield.size / 200f, (float3)_heightfield.size / 100f));
+            m_BRG.SetPickingMaterial(new Material(Shader.Find("Hidden/Universal Render Pipeline/BRGPicking")));
+            m_BRG.SetEnabledViewTypes(new []{BatchCullingViewType.Camera, BatchCullingViewType.Picking});
 
             AllocateInstanceDateBuffer();
             PopulateInstanceDataBuffer();
+            
+            _rpHighlight = new RenderParams(layersMaterial)
+            {
+                matProps = new MaterialPropertyBlock()
+            };
+            
+            _rpWind = new RenderParams(windMaterial)
+            {
+                matProps = new MaterialPropertyBlock()
+            };
+            _rpWind.matProps.SetColor("_BaseColor", Color.cyan);
+            
+            _rpFinal = new RenderParams(terrainMaterial)
+            {
+                matProps = new MaterialPropertyBlock()
+            };
+
+            _windMesh = new Mesh();
+            _finalMesh = new Mesh();
+            
+            GenerateWindMesh();
+            GenerateFinalMesh();
+            OnEnable();
+        }
+
+        private void OnEnable()
+        {
+            if (!_heightfield.IsCreated) return;
+            RenderPipelineManager.beginContextRendering += RenderNonInstanced;
+            RenderPipelineManager.beginContextRendering += TransferData;
+        }
+
+        private void OnDisable()
+        {
+            RenderPipelineManager.beginContextRendering -= RenderNonInstanced;
+            RenderPipelineManager.beginContextRendering -= TransferData;
         }
 
         private void AllocateInstanceDateBuffer()
@@ -84,8 +141,8 @@ namespace TFM.Components.Visualization
 
         private void PopulateInstanceDataBuffer()
         {
+            if (!drawSnow) return;
             var zero = new [] { float4x4.zero };
-
             var ctmj = new InitMatrices
             {
                 heightfield = _heightfield,
@@ -135,44 +192,93 @@ namespace TFM.Components.Visualization
         }
     
         private void OnDestroy()
-        { 
-            m_BRG.Dispose();
-            m_InstanceData.Dispose();
-            _worldToObject.Dispose();
-            _objectToWorld.Dispose();
-            _colors.Dispose();
+        {
+            m_BRG?.Dispose();
+            m_InstanceData?.Dispose();
+            if (_worldToObject.IsCreated) _worldToObject.Dispose();
+            if (_objectToWorld.IsCreated) _objectToWorld.Dispose();
+            if (_colors.IsCreated) _colors.Dispose();
         }
 
-        private void Update()
+        // TODO: Move to draw call for fun
+        private void RenderNonInstanced(ScriptableRenderContext scriptableRenderContext, List<Camera> cameras)
         {
-            /*var csj = new CopySnowLevels
+            _rpHighlight.matProps.SetColor("_BaseColor", Color.green);
+            foreach (var point in _highlightedPoints)
             {
-                levels = _colors.GetSubArray(kSizeLayer, kSizeLayer),
-                snowfield = _snowfield
-            };
-            
-            var csh = csj.ScheduleParallel(kSizeLayer, 256, default);*/
-
-            if (math.all(highlightDebug > -1))
-            {
-                var rp = new RenderParams(material);
-                rp.matProps = new MaterialPropertyBlock();
-                rp.matProps.SetColor("_BaseColor", Color.green);
-
-                var h = (float)_heightfield[highlightDebug];
-                h += (float)math.csum(_snowfield[highlightDebug]);
+                var h = (float)_heightfield[point];
+                h += (float)math.csum(_snowfield[point]);
                 var cs = (float)_heightfield.cellSize.x;
-
+                var ij = _heightfield.cell(point);
 
                 var m = Matrix4x4.TRS(
-                    new Vector3(highlightDebug.x * cs + cs * 0.5f, h * 0.5f + 0.1f, highlightDebug.y * cs + cs * 0.5f) / scale,
+                    new Vector3(ij.x * cs + cs * 0.5f, h * 0.5f, ij.y * cs + cs * 0.5f) / scale,
                     Quaternion.identity,
                     new Vector3(cs, h, cs) / scale
                 );
                 
-                Graphics.RenderMesh(rp, mesh, 0, m);
+                Graphics.RenderMesh(_rpHighlight, mesh, 0, m);
             }
-            
+
+            _rpHighlight.matProps.SetColor("_BaseColor", Color.yellow);
+            foreach (var point in _selectedPoints)
+            {
+                if (_highlightedPoints.Contains(point)) continue;
+                var h = (float)_heightfield[point];
+                h += (float)math.csum(_snowfield[point]);
+                var cs = (float)_heightfield.cellSize.x;
+                var ij = _heightfield.cell(point);
+
+                var m = Matrix4x4.TRS(
+                    new Vector3(ij.x * cs + cs * 0.5f, h * 0.5f, ij.y * cs + cs * 0.5f) / scale,
+                    Quaternion.identity,
+                    new Vector3(cs, h, cs) / scale
+                );
+                
+                Graphics.RenderMesh(_rpHighlight, mesh, 0, m);
+            }
+
+            if (drawWind)
+            {
+                if (_prevWindLevel != windLevel) GenerateWindMesh();
+                Graphics.RenderMesh(_rpWind, _windMesh, 0, Matrix4x4.Scale(math.float3(1f/scale)));
+            }
+
+            if (drawFinal)
+            {
+                GenerateFinalMesh();
+                Graphics.RenderMesh(_rpFinal, _finalMesh, 0, Matrix4x4.Scale(math.float3(1f/scale)));
+            }
+        }
+
+        // TODO: Change to procedural for fun
+        private void GenerateWindMesh()
+        {
+            var l = _wind.Layer((int)math.floor(windLevel));
+            var u = _wind.Layer((int)math.ceil(windLevel));
+            var t = math.frac(windLevel);
+            var i = new doubleF(l, Allocator.TempJob);
+            for (int j = 0; j < i.Length; j++)
+            {
+                i[j] = math.lerp(l[j], u[j], t);
+            }
+
+            i.GenerateMesh(out Mesh.MeshDataArray mda, default).Complete();
+            Mesh.ApplyAndDisposeWritableMeshData(mda, _windMesh);
+            _windMesh.RecalculateBounds();
+            i.Dispose();
+            _prevWindLevel = windLevel;
+        }
+        
+        private void GenerateFinalMesh()
+        {
+            _heightfield.GenerateMesh(out Mesh.MeshDataArray mda, default, _snowfield).Complete();
+            Mesh.ApplyAndDisposeWritableMeshData(mda, _finalMesh);
+            _finalMesh.RecalculateBounds();
+        }
+
+        private void TransferData(ScriptableRenderContext scriptableRenderContext, List<Camera> cameras)
+        {
             var cmj = new ComputeMatrices
             {
                 heightfield = _heightfield,
@@ -188,7 +294,6 @@ namespace TFM.Components.Visualization
             
             m_InstanceData.SetData(_objectToWorld, kSizeLayer, (int)(_byteAddressObjectToWorld / kSizeOfPackedMatrix) + kSizeLayer, kSizeLayer * 4);
             m_InstanceData.SetData(_worldToObject, kSizeLayer, (int)(_byteAddressWorldToObject / kSizeOfPackedMatrix) + kSizeLayer, kSizeLayer * 4);
-            //m_InstanceData.SetData(_colors, kSizeLayer, (int)(_byteAddressColor / kSizeOfFloat4) + kSizeLayer, kSizeLayer);
         }
 
         private unsafe JobHandle OnPerformCulling(
@@ -231,13 +336,18 @@ namespace TFM.Components.Visualization
             drawCommands->drawRanges[0].filterSettings = new BatchFilterSettings { renderingLayerMask = 0xffffffff, };
             
             drawCommands->drawCommands[0].visibleCount = 0;
+            if (!drawSnow && !drawTerrain) return new JobHandle();
             var job = new CullEmptySnow
             {
                 snowfield = _snowfield,
                 heightfield = _heightfield,
                 visibleCount = &drawCommands->drawCommands[0].visibleCount,
                 visibleInstances = drawCommands->visibleInstances,
+                selected = _selectedPoints,
                 renderBox = renderBox,
+                highlighted = _highlightedPoints,
+                drawSnow = drawSnow,
+                drawTerrain = drawTerrain
             };
             var jh = job.Schedule(kSizeLayer, default);
             return jh;
@@ -335,23 +445,29 @@ namespace TFM.Components.Visualization
         {
             [ReadOnly] public double4F snowfield;
             [ReadOnly] public doubleF heightfield;
+            [ReadOnly] public NativeHashSet<int> selected, highlighted;
             [NativeDisableUnsafePtrRestriction] public int* visibleInstances;
             [NativeDisableUnsafePtrRestriction] public uint* visibleCount;
 
             public float4 renderBox;
+            public bool drawTerrain, drawSnow;
             
             public void Execute(int index)
             {
+                if (highlighted.Contains(index) || selected.Contains(index)) return;
                 int ioffset = heightfield.dimension.x * heightfield.dimension.y;
                 var c = heightfield.cell(index);
                 if (math.any(c < renderBox.xz * heightfield.dimension | c > renderBox.yw * heightfield.dimension)) return;
                 var j = *visibleCount;
-                visibleInstances[j++] = index;
-                var m = snowfield[index] > 0.001;
-                if (m.x) visibleInstances[j++] = index + ioffset;
-                if (m.y) visibleInstances[j++] = index + ioffset * 2;
-                if (m.z) visibleInstances[j++] = index + ioffset * 3;
-                if (m.w) visibleInstances[j++] = index + ioffset * 4;
+                if (drawTerrain) visibleInstances[j++] = index;
+                if (drawSnow)
+                {
+                    var m = snowfield[index] > 0.001;
+                    if (m.x) visibleInstances[j++] = index + ioffset;
+                    if (m.y) visibleInstances[j++] = index + ioffset * 2;
+                    if (m.z) visibleInstances[j++] = index + ioffset * 3;
+                    if (m.w) visibleInstances[j++] = index + ioffset * 4;
+                }
                 *visibleCount = j;
             }
         }

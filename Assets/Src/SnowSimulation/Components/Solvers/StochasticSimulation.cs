@@ -1,12 +1,16 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using HPML;
 using TFM.Simulation;
+using Unity.Collections;
 using Unity.Jobs;
+using Unity.Mathematics;
 using UnityEngine;
-using static Unity.Mathematics.math;
 using Random = Unity.Mathematics.Random;
+
+using static Unity.Mathematics.math;
 
 namespace TFM.Components.Solvers
 {
@@ -20,53 +24,64 @@ namespace TFM.Components.Solvers
             SnowfallStep,
             SnowfallStart,
             SnowfallEnd,
+            AvalancheStep,
+            AvalancheStart,
         }
         
         private Snow.Parameters _parameters;
         private doubleF _height;
         private doubleF _temperature;
         private double4F _snow;
-        private double3F _wind;
-        private doubleF _windAltitude;
+        private double2F _wind;
+        private ScalarField2D _windAltitude;
+        private ScalarField2D _windTerrain;
+        
+        private NativeArray<double> _tempTimeline;
+        private NativeArray<double> _windTimeline;
+        private NativeArray<double> _cloudTimeline;
+        private NativeArray<double> _precipTimeline;
+        
+        private NativeArray<double> _flow;
+        private NativeArray<bool> _moving;
+        private doubleF _hazard;
         
         public Snow.Parameters parameters { set => _parameters = value; }
         public doubleF height { set => _height = value; }
         public doubleF temperature { set => _temperature = value; }
         public double4F snow { set => _snow = value; }
-        public double3F wind { set => _wind = value; }
-        public doubleF windAltitude { set => _windAltitude = value; }
+        public double2F wind { set => _wind = value; }
+        public ScalarField2D windAltitude { set => _windAltitude = value; }
+        public ScalarField2D windTerrain { set => _windTerrain = value; }
+        public NativeArray<double> tempTimeline { set => _tempTimeline = value; }
+        public NativeArray<double> windTimeline { set => _windTimeline = value; }
+        public NativeArray<double> cloudTimeline { set => _cloudTimeline = value; }
+        public NativeArray<double> precipTimeline { set => _precipTimeline = value; }
+        public NativeArray<double> flow { set => _flow = value; }
+        public NativeArray<bool> moving { set => _moving = value; }
+        public doubleF hazard {set => _hazard = value; }
         public float simulationTime { get; private set; }
         
         private Random _rng;
         private readonly uint _seed;
         
-        private const float MeltStepLambda = 0.5f;
-        private const float TransportStepLambda = 0.5f;
-        private const float DiffusionStepLambda = 0.5f;
-        private const float SnowfallStepLambda = 0.5f;
-        private const float SnowfallStartLambda = 7f;
-        private const float SnowfallEndLambda = 5f;
-        private const float AvalancheStartLambda = 2f;
-        private const float AvalancheStepLambda = 0.01f;
-
-        private float[] _eventPeriods, _eventFreqs;
-        private bool[] _enabledEvents;
+        private Dictionary<EventId, float> _periods;
+        private Dictionary<EventId, float> _frequencies;
+        private Dictionary<EventId, bool> _enabled;
 
         private bool _profilingEnabled;
         private (EventId, float, double)[] _profilingData;
         private int _profilingDataIndex;
+
+        private bool _useTimeline = true;
         
         public StochasticSimulation(uint seed)
         {
             _seed = seed;
             _rng = new Random();
-            _eventPeriods = new float[6];
-            _eventFreqs = new float[6];
-            _enabledEvents = new bool[6];
-            for (int i = 0; i < _enabledEvents.Length; i++)
-            {
-                _enabledEvents[i] = true;
-            }
+            _periods = new(8);
+            _frequencies = new(8);
+            _enabled = new(8);
+            
             Reset();
         }
 
@@ -74,81 +89,114 @@ namespace TFM.Components.Solvers
         {
             simulationTime = 0f;
             _rng.InitState(_seed);
-            _eventPeriods[(int)EventId.MeltStep] = MeltStepLambda;
-            _eventPeriods[(int)EventId.TransportStep] = TransportStepLambda;
-            _eventPeriods[(int)EventId.DiffusionStep] = DiffusionStepLambda;
-            _eventPeriods[(int)EventId.SnowfallStep] = SnowfallStepLambda;
-            _eventPeriods[(int)EventId.SnowfallStart] = SnowfallStartLambda;
-            _eventPeriods[(int)EventId.SnowfallEnd] = SnowfallEndLambda;
+            _periods[EventId.MeltStep] = 0.5f;
+            _periods[EventId.TransportStep] = 0.5f;
+            _periods[EventId.DiffusionStep] = 0.5f;
+            _periods[EventId.SnowfallStep] = 0.5f;
+            _periods[EventId.SnowfallStart] = 7f;
+            _periods[EventId.SnowfallEnd] = 5f;
+            _periods[EventId.AvalancheStep] = 1f / 24f / 3600f * 0.1f;
+            _periods[EventId.AvalancheStart] = 15f;
 
-            for (int i = 0; i < _eventPeriods.Length; i++)
+            foreach (EventId id in Enum.GetValues(typeof(EventId)))
             {
-                _eventFreqs[i] = 1 / _eventPeriods[i];
+                _frequencies[id] = 1f / _periods[id];
             }
 
-            _eventFreqs[(int)EventId.SnowfallStep] = 0f;
-            _eventFreqs[(int)EventId.SnowfallEnd] = 0f;
+            _frequencies[EventId.SnowfallStep] = 0f;
+            _frequencies[EventId.SnowfallEnd] = 0f;
+            _frequencies[EventId.AvalancheStep] = 0f;
+            if (_useTimeline) _frequencies[EventId.SnowfallStart] = 0f;
         }
 
-        public void SetEventEnabled(EventId ev, bool enabled)
+        public void SetEventEnabled(EventId id, bool enabled)
         {
-            _enabledEvents[(int)ev] = enabled;
+            _enabled[id] = enabled;
+        }
+
+        private EventId Next()
+        {
+            var totalProb = 0f;
+            foreach (var id in _frequencies.Keys)
+            {
+                if (!_enabled[id]) continue;
+                totalProb += _frequencies[id];
+            }
+
+            if (totalProb < 0.00001)
+            {
+                Debug.LogError("At least one simulation event must be enabled.");
+                return (EventId)(-1);
+            }
+            
+            simulationTime += 1f / totalProb;
+            var random = _rng.NextFloat() * totalProb;
+
+            totalProb = 0f;
+            foreach (var id in _frequencies.Keys)
+            {
+                if (!_enabled[id]) continue;
+                totalProb += _frequencies[id];
+                if (totalProb >= random) return id;
+            }
+            return (EventId)(-1);
         }
         
         public void Step()
         {
-            var totalProb = 0f;
-            for (var i = 0; i < _eventFreqs.Length; i++)
+            if (_useTimeline)
             {
-                if (!_enabledEvents[i]) continue;
-                var freq = _eventFreqs[i];
-                totalProb += freq;
-            }
+                if (simulationTime > _tempTimeline.Length) return;
+                
+                var low = (int)floor(simulationTime);
+                var high = (int)ceil(simulationTime);
+                var t = frac(simulationTime);
+                _parameters.TempBase = lerp(_tempTimeline[low], _tempTimeline[high], t);
+                _parameters.WindSpeed = lerp(_windTimeline[low], _windTimeline[high], t);
+                _parameters.TemperatureIncreasePerSunlight = 1f - lerp(_cloudTimeline[low], _cloudTimeline[high], t);
+                _parameters.SnowfallStrength = lerp(_precipTimeline[low], _precipTimeline[high], t);
 
-            var dt = 1 / totalProb;
-            var prob = _rng.NextFloat() * totalProb;
-            var ev = (EventId)(-1);
-            totalProb = 0f;
-            for (int i = 0; i < _eventFreqs.Length; i++)
-            {
-                if (!_enabledEvents[i]) continue;
-                totalProb += _eventFreqs[i];
-                if (totalProb >= prob)
-                {
-                    ev = (EventId)i;
-                    break;
-                }
+                if (_parameters.SnowfallStrength > 0.0000000001)
+                    _frequencies[EventId.SnowfallStep] = 1f / _periods[EventId.SnowfallStep];
+                else
+                    _frequencies[EventId.SnowfallStep] = 0f;
             }
-
+            
+            var ev = Next();
             var jh = new JobHandle();
             var preEventTime = DateTime.Now;
             switch (ev)
             {
                 case EventId.MeltStep:
-                    jh = Snow.Melt(_snow, _temperature, _height, MeltStepLambda, ref _parameters, jh);
+                    jh = Snow.Melt(_snow, _temperature, _height, _periods[ev], ref _parameters, jh);
                     break;
                 case EventId.TransportStep:
-                    jh = Snow.Transport(_snow, _wind, _windAltitude, _height, TransportStepLambda, ref _parameters, jh);
+                    jh = Snow.Transport(_snow, _wind, _windAltitude, _windTerrain, _height, _periods[ev], ref _parameters, jh);
                     break;
                 case EventId.DiffusionStep:
-                    jh = Snow.Diffusion(_snow, _height, DiffusionStepLambda, ref _parameters, jh);
+                    jh = Snow.Diffusion(_snow, _height, _periods[ev], ref _parameters, jh);
                     break;
                 case EventId.SnowfallStep:
-                    jh = Snow.Snowfall(_snow, _height, _temperature, SnowfallStepLambda, ref _parameters, jh);
+                    jh = Snow.Snowfall(_snow, _height, _temperature, _periods[ev], ref _parameters, jh);
                     break;
                 case EventId.SnowfallStart:
-                    _eventFreqs[(int)EventId.SnowfallStep] = 1f / _eventPeriods[(int)EventId.SnowfallStep];
-                    _eventFreqs[(int)EventId.SnowfallEnd] = 1f / _eventPeriods[(int)EventId.SnowfallEnd];
-                    _eventFreqs[(int)EventId.SnowfallStart] = 0;
+                    _frequencies[EventId.SnowfallStep] = 1f / _periods[EventId.SnowfallStep];
+                    _frequencies[EventId.SnowfallEnd] = 1f / _periods[EventId.SnowfallEnd];
+                    _frequencies[EventId.SnowfallStart] = 0;
                     break;
                 case EventId.SnowfallEnd:
-                    jh = Snow.Snowfall(_snow, _height, _temperature, SnowfallStepLambda, ref _parameters, jh);
-                    _eventFreqs[(int)EventId.SnowfallStep] = 0;
-                    _eventFreqs[(int)EventId.SnowfallEnd] = 0;
-                    _eventFreqs[(int)EventId.SnowfallStart] = 1f / _eventPeriods[(int)EventId.SnowfallStart];
+                    jh = Snow.Snowfall(_snow, _height, _temperature, _periods[ev], ref _parameters, jh);
+                    _frequencies[EventId.SnowfallStep] = 0;
+                    _frequencies[EventId.SnowfallEnd] = 0;
+                    _frequencies[EventId.SnowfallStart] = 1f / _periods[EventId.SnowfallStart];
+                    break;
+                case EventId.AvalancheStart:
+                    TriggerAvalanche();
+                    break;
+                case EventId.AvalancheStep:
+                    jh = Snow.AvalancheParallel(_snow, _flow, _height, _moving, 0.1, ref _parameters, default);
                     break;
                 case (EventId)(-1):
-                    Debug.LogWarning("No event enabled in the simulation");
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();
@@ -156,13 +204,34 @@ namespace TFM.Components.Solvers
             jh.Complete();
             var postEventTime = DateTime.Now;
 
+            if (ev == EventId.AvalancheStep && !_moving.Any(x => x))
+            {
+                _frequencies[EventId.AvalancheStart] = 1f / _periods[EventId.AvalancheStart];
+                _frequencies[EventId.AvalancheStep] = 0f;
+            }
+
             if (_profilingEnabled)
             {
                 _profilingData[_profilingDataIndex] = (ev, simulationTime, (postEventTime - preEventTime).TotalMilliseconds);
                 _profilingDataIndex = (_profilingDataIndex + 1) % _profilingData.Length;
             }
+        }
 
-            simulationTime += dt;
+        public void TriggerAvalanche(int cell = -1)
+        {
+            _frequencies[EventId.AvalancheStep] = 1f / _periods[EventId.AvalancheStep];
+            _frequencies[EventId.AvalancheStart] = 0f;
+            
+            if (cell == -1)
+            {
+                var trigger = _rng.NextDouble() * _hazard[^1];
+                for (int i = 0; i < _hazard.Length; i++)
+                {
+                    if (_hazard[i] < trigger) continue;
+                    cell = i; break;
+                }
+            }
+            if (cell >= 0) _moving[cell] = true;
         }
         
         public void EnableProfiling(int capacity)
@@ -195,9 +264,6 @@ namespace TFM.Components.Solvers
                 writer.WriteLine($"{j},{ev.ToString()},{time},{duration}");
                 totalDuration += duration;
             }
-
-            //totalDuration /= _profilingData.Length;
-            //writer.WriteLine($", , , {totalDuration}");
         }
     }
 }

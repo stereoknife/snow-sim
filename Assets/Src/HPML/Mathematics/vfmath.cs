@@ -29,5 +29,17 @@ namespace HPML
             
             return double2(minl, maxl);
         }
+        
+        public static double2 minmax(in double2F field)
+        {
+            double maxl = double.MinValue, minl = double.MaxValue;
+            for (int i = 0; i < field.Length; i++)
+            {
+                maxl = max(lengthsq(field[i]), maxl);
+                minl = min(lengthsq(field[i]), minl);
+            }
+            
+            return double2(minl, maxl);
+        }
     }
 }

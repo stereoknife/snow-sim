@@ -10,11 +10,13 @@ using static Unity.Mathematics.math;
 
 namespace HPML
 {   
+    
     /// <summary>
     /// Static class containing mathematical operations performed on 2D scalar and vector fields.
     /// </summary>
-    public static class field
+    public static class SF
     {
+        /*
         /// <summary>
         /// Add two fields together and store the result in a third one. All fields must be the same dimension.
         /// Non-destructive.
@@ -24,7 +26,7 @@ namespace HPML
         /// <param name="result">Field to store the result in</param>
         /// <exception cref="IndexOutOfRangeException">If collections checks are enabled the exception will be thrown
         /// if the fields are not of the same dimension.</exception>
-        public static void add(in doubleF a, in doubleF b, doubleF result)
+        public static void add(in ScalarField2D<double> a, in ScalarField2D<double> b, ScalarField2D<double> result)
         {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             if (a.Length != b.Length) throw new IndexOutOfRangeException("Attempted to add two fields of different size");
@@ -33,9 +35,10 @@ namespace HPML
             Debug.Assert(all(a.dimension == b.dimension) && all(b.dimension == a.dimension));
             unsafe
             {
-                scalarfield.add((double*)a.field.GetUnsafeReadOnlyPtr(), (double*)b.field.GetUnsafeReadOnlyPtr(), (double*)result.field.GetUnsafePtr(), result.field.Length);
+                scalarfield.add((double*)a.array.GetUnsafeReadOnlyPtr(), (double*)b.array.GetUnsafeReadOnlyPtr(), (double*)result.array.GetUnsafePtr(), result.array.Length);
             }
         }
+        */
         
         /// <summary>
         /// Add two fields together and store the result in the second one. All fields must be the same dimension.
@@ -54,26 +57,6 @@ namespace HPML
             {
                 scalarfield.add((double*)a.field.GetUnsafeReadOnlyPtr(), (double*)to.field.GetUnsafeReadOnlyPtr(), (double*)to.field.GetUnsafePtr(), to.field.Length);
             }
-        }
-        
-        public static unsafe void add(in doubleF a, double b)
-        {
-            scalarfield.mul((double*)a.field.GetUnsafeReadOnlyPtr(), b, (double*)a.field.GetUnsafePtr(), a.field.Length);
-        }
-        
-        public static unsafe void add(in double2F a, double b)
-        {
-            scalarfield.mul((double*)a.array.GetUnsafeReadOnlyPtr(), b, (double*)a.array.GetUnsafePtr(), a.array.Length * 2);
-        }
-
-        public static unsafe void mul(in doubleF a, double b)
-        {
-            scalarfield.mul((double*)a.field.GetUnsafeReadOnlyPtr(), b, (double*)a.field.GetUnsafePtr(), a.field.Length);
-        }
-        
-        public static unsafe void mul(in double2F a, double b)
-        {
-            scalarfield.mul((double*)a.array.GetUnsafeReadOnlyPtr(), b, (double*)a.array.GetUnsafePtr(), a.array.Length * 2);
         }
         
         /// <summary>
@@ -177,19 +160,6 @@ namespace HPML
                 (a[at.x, up.y] - a[at.x, down.y]) * norm.y
             ));
         }
-        
-        public static double2x2 cgradient(in double2F a, int at) => cgradient(in a, a.cell(at));
-        public static double2x2 cgradient(in double2F a, int2 at)
-        {
-            int2 up   = min(at + 1, a.dimension - 1);
-            int2 down = max(at - 1, 0);
-            double2 norm = a.iCellSize / (up - down);
-            
-            return transpose(double2x2(
-                (a[up.x, at.y] - a[down.x, at.y]) * norm.x,
-                (a[at.x, up.y] - a[at.x, down.y]) * norm.y
-            ));
-        }
 
         /// <summary>
         /// Get the second derivative at a point on a field.
@@ -243,7 +213,7 @@ namespace HPML
             double2 gradient = field.gradient(in a, at);
             double3 tanx = new(1.0, gradient.x, 0.0);
             double3 tanz = new(0.0, gradient.y, 1.0);
-            return math.normalize(cross(tanz, tanx));
+            return Unity.Mathematics.math.normalize(cross(tanz, tanx));
         }
 
         /// <summary>
@@ -301,82 +271,5 @@ namespace HPML
             ) * a.iCellSize * a.iCellSize;
         }
         //*/
-        
-        public static double2 gradient(in doubleF a, in double4F b, int at) => gradient(in a, in b, a.cell(at));
-        public static double2 gradient(in doubleF a, in double4F b, int2 at)
-        {
-            int2 up   = min(at + 1, a.dimension - 1);
-            int2 down = max(at - 1, 0);
-            double2 norm = a.iCellSize / (up - down);
-            
-            return new double2(
-                a[up.x, at.y] + csum(b[up.x, at.y]) - a[down.x, at.y] - csum(b[down.x, at.y]),
-                a[at.x, up.y] + csum(b[at.x, up.y]) - a[at.x, down.y] - csum(b[at.x, down.y])
-            ) * norm;
-        }
-
-        public static double3x3 quadric(in doubleF field, int2 at, int w)
-        {
-            var n = w / 2;
-            var z0 = field[at];
-            double m00 = 0, m01 = 0, m10 = 0, m11 = 0, m22 = 0, m33 = 0, m44 = 0, r0 = 0, r1 = 0, r2 = 0, r3 = 0, r4 = 0;
-
-            for (int i = -n; i <= n; i++) {
-                for (int j = -n; j <= n; j++)
-                {
-                    var ij = int2(i, j) + at;
-                    var xy = int2(i, j) * field.cellSize;
-                    var z = any(ij < 0 | ij >= field.dimension) ? 0 : field[ij];
-                    z -= z0;
-
-                    var xy2 = xy * xy;
-
-                    m00 += xy2.x * xy2.x;
-                    m11 += xy2.y * xy2.y;
-                    m01 += xy2.x * xy2.y;
-                    m10 += xy2.x * xy2.y;
-                    m22 += xy2.x * xy2.y;
-                    m33 += xy2.x;
-                    m44 += xy2.y;
-                    m01 += xy2.y;
-
-                    r0 += z * xy2.x;
-                    r1 += z * xy2.y;
-                    r2 += z * xy.x * xy.y;
-                    r3 += z * xy.x;
-                    r4 += z * xy.y;
-                }
-            }
-
-            var det = m00 * m11 - m01 * m10;
-            var a = (m11 * r0 - m01 * r1) / det;
-            var b = (m00 * r1 - m10 * r0) / det;
-            var c = r2 / m22;
-            var d = r3 / m33;
-            var e = r4 / m44;
-            var f = 0d;
-
-            return double3x3(
-                f, e, b,
-                d, c, 0,
-                a, 0, 0
-            );
-        }
-
-        public static double2 curv(doubleF field, int index, int w) => curv(field, field.cell(index), w);
-        public static double2 curv(doubleF field, int2 at, int w)
-        {
-            var q = quadric(field, at, w);
-            var a = q.c0.z;
-            var b = q.c2.x;
-            var c = q.c1.y;
-            var d = q.c0.x;
-            var e = q.c1.x;
-
-            var profile = 2.0 * (a * d * d + b * e * e + c * e * d) / ((e * e + d * d) * sqrt(pow(1.0 + d * d + e * e, 3)));
-            var contour = 2.0 * (b * d * d + a * e * e - c * d * e) / sqrt(pow(e * e + d * d, 3));
-
-            return double2(profile, contour);
-        }
     }
 }

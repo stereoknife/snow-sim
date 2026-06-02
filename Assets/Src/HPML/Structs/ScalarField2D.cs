@@ -1,104 +1,95 @@
+using System;
 using System.Diagnostics.Contracts;
 using System.Runtime.CompilerServices;
-using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
-using UnityEngine;
 
 using static HPML.vec;
-using static Unity.Mathematics.math;
 using int2 = Unity.Mathematics.int2;
 
 namespace HPML
 {
     
-    public struct ScalarField2D<T> : INativeDisposable where T : struct
+    public struct ScalarField2D : INativeDisposable
     {
-        public NativeArray<T> field;
+        public NativeArray<double> array;
         public int2 dimension;
-        public double3 size;
-        public double2 cellSize => size.xz / dimension;
-        public double2 iCellSize => dimension / size.xz;
-        public int Length => field.Length;
-        
-        /*
-        public static doubleF FromTexture<T>(Texture2D tex, double3 size, Allocator allocator)
-        {
-            var output = new doubleF(new(tex.width, tex.height), size, allocator);
-            var data = tex.GetRawTextureData<ushort>();
-            
-            // TODO: Move to job or something like that
-            for (int i = 0; i < output.field.Length; i++)
-            {
-                output.field[i] = size.y * (T)data[i] / (double)ushort.MaxValue;
-            }
+        public int layers;
+        public double2 size;
 
-            return output;
-        }
-        */
+        public double2 cellSize => size / dimension;
+        public double2 iCellSize => dimension / size;
+        public int Length => array.Length;
 
-        public ScalarField2D(ScalarField2D<T> sf, Allocator allocator)
+        public ScalarField2D(ScalarField2D sf, Allocator allocator)
         {
-            field = new NativeArray<T>(area(sf.dimension), allocator);
+            array = new NativeArray<double>(sf.Length, allocator);
             dimension = sf.dimension;
             size = sf.size;
+            layers = sf.layers;
         }
         
-        public ScalarField2D(int2 dimension, double3 size, Allocator allocator)
+        public ScalarField2D(int2 dimension, int layers, double2 size, Allocator allocator)
         {
-            field = new NativeArray<T>(area(dimension), allocator);
+            array = new NativeArray<double>(area(dimension) * layers, allocator);
             this.dimension = dimension;
+            this.layers = layers;
             this.size = size;
         }
         
         // Indexing
         // ========
         [Pure] [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int2 cell(int idx) => new(idx % dimension.x, idx / dimension.y);
+        //public int2 cell(int idx) => new(idx / layers % dimension.x, idx / layers / dimension.y);
+        public int3 cell(int idx) => new(idx % dimension.x, idx / dimension.x % dimension.y, idx / area(dimension));
         
         [Pure] [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int2 cell(double2 coord) => int2(coord * iCellSize);
+        //public int index(int2 cell) => (cell.y * dimension.x + cell.x) * layers;
+        public int index(int3 cell) => cell.z * area(dimension) + cell.y * dimension.x + cell.x;
         
         [Pure] [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int index(int2 cell) => cell.y * dimension.x + cell.x;
+        //public int index(int i, int j) => (j * dimension.x + i) * layers;
+        public int index(int i, int j, int k) => k * area(dimension) + j * dimension.x + i;
         
-        [Pure] [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int index(int i, int j) => j * dimension.x + i;
-        
-        [Pure] [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int index(double2 coord) => index(int2(coord * iCellSize));
-        
-        public T this[int key]
+        public double this[int key]
         {
-            get => field[key];
-            set => field[key] = value;
+            get => array[key];
+            set => array[key] = value;
         }
 
-        public T this[int2 key]
+        public double this[int3 key]
         {
-            get => field[index(key)];
-            set => field[index(key)] = value;
+            get => array[index(key)];
+            set => array[index(key)] = value;
         }
 
-        public T this[int i, int j]
+        public double this[int i, int j, int k]
         {
-            get => field[index(i, j)];
-            set => field[index(i, j)] = value;
+            get => array[index(i, j, k)];
+            set => array[index(i, j, k)] = value;
         }
-        
-        [Pure] [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool IsValid(double2 coords) => all(coords >= 0) && all(coords < size.xz);
 
+        public doubleF Layer(int i)
+        {
+            var layerLength = area(dimension);
+            var slice = array.GetSubArray(layerLength * i, layerLength);
+            return new doubleF
+            {
+                dimension = dimension,
+                size = math.double3(size, 1).xzy,
+                field = slice
+            };
+        }
 
         // IDispose Implementation
         // =======================
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public void Dispose() => field.Dispose();
+        public void Dispose() => array.Dispose();
         
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public JobHandle Dispose(JobHandle inputDeps) => field.Dispose(inputDeps);
+        public JobHandle Dispose(JobHandle inputDeps) => array.Dispose(inputDeps);
         
-        public bool IsCreated => field.IsCreated;
+        public bool IsCreated => array.IsCreated;
     }
 }

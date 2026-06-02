@@ -19,6 +19,36 @@ namespace HPML.Unsafe
         }
         
         [BurstCompile]
+        public static unsafe void add(double* a, double b, double* result, int count)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                Unity.Burst.CompilerServices.Loop.ExpectVectorized();
+                result[i] = a[i] + b;
+            }
+        }
+        
+        [BurstCompile]
+        public static unsafe void mul(double* a, double* b, double* result, int count)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                Unity.Burst.CompilerServices.Loop.ExpectVectorized();
+                result[i] = a[i] + b[i];
+            }
+        }
+        
+        [BurstCompile]
+        public static unsafe void mul(double* a, double b, double* result, int count)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                Unity.Burst.CompilerServices.Loop.ExpectVectorized();
+                result[i] = a[i] + b;
+            }
+        }
+        
+        [BurstCompile]
         public static unsafe void normalize(double* a, double* result, double min, double max, int count)
         {
             for (int i = 0; i < count; i++)

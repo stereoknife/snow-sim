@@ -1,4 +1,5 @@
 using HPML;
+using Unity.Collections;
 
 namespace TFM.Components.Visualization
 {
@@ -6,5 +7,7 @@ namespace TFM.Components.Visualization
     {
         public doubleF Heightfield { get; }
         public double4F Snowfield { get; }
+        public NativeHashSet<int> SelectedPoints { get; }
+        public NativeHashSet<int> HighlightedPoints { get; }
     }
 }

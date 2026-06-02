@@ -3,13 +3,15 @@
     "rootNamespace": "",
     "references": [
         "GUID:1c449de6bf6f4cd4bde94df5f1299983",
-        "GUID:d8b63aba1907145bea998dd612889d6b"
+        "GUID:d8b63aba1907145bea998dd612889d6b",
+        "GUID:2765e68924a08a94ea0ea66b31c0168f",
+        "GUID:e0cd26848372d4e5c891c569017e11f1"
     ],
     "includePlatforms": [
         "Editor"
     ],
     "excludePlatforms": [],
-    "allowUnsafeCode": false,
+    "allowUnsafeCode": true,
     "overrideReferences": true,
     "precompiledReferences": [
         "nunit.framework.dll"

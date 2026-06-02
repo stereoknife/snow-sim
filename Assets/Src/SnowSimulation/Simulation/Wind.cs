@@ -1,3 +1,4 @@
+using System;
 using System.Runtime.CompilerServices;
 using HPML;
 using Unity.Burst;
@@ -17,30 +18,47 @@ namespace TFM.Simulation
             public double SurfaceFalloff;       // m/s^2
             public int SurfaceMaxIterations;    // 
 
+            public int SurfaceSamples;
+            public double SurfaceSpeedIncrement;
+
             public static Parameters Default => new()
             {
                 VenturiIntensity = 0.001,
                 DeflectionIntensity = 0.5,
                 SurfaceFalloff = 0.7,
                 SurfaceMaxIterations = 500,
+                SurfaceSamples = 1,
+                SurfaceSpeedIncrement = 10,
             };
+
+            public int Hash()
+            {
+                var hash = new HashCode();
+                hash.Add(VenturiIntensity);
+                hash.Add(DeflectionIntensity);
+                hash.Add(SurfaceFalloff);
+                hash.Add(SurfaceMaxIterations);
+                hash.Add(SurfaceSamples);
+                hash.Add(SurfaceSpeedIncrement);
+                return hash.ToHashCode();
+            }
         }
         
         #region Venturi
         
-        public static void Venturi(double3F wind, doubleF height, ref Parameters P)
+        public static void Venturi(double2F wind, doubleF height, ref Parameters P)
         {
             var job = new VenturiJob(wind, height, ref P);
             job.Run(wind.Length);
         }
 
-        public static JobHandle Venturi(double3F wind, doubleF height, ref Parameters P, JobHandle dependsOn)
+        public static JobHandle Venturi(double2F wind, doubleF height, ref Parameters P, JobHandle dependsOn)
         {
             var job = new VenturiJob(wind, height, ref P);
             return job.Schedule(wind.Length, dependsOn);
         }
         
-        public static JobHandle VenturiParallel(in double3F wind, doubleF height, ref Parameters P, JobHandle dependsOn)
+        public static JobHandle VenturiParallel(in double2F wind, doubleF height, ref Parameters P, JobHandle dependsOn)
         {
             var job = new VenturiJob(wind, height, ref P);
             return job.ScheduleParallel(wind.Length, 256, dependsOn);
@@ -49,10 +67,10 @@ namespace TFM.Simulation
         private struct VenturiJob : IJobFor
         {
             [ReadOnly] public doubleF height;
-            [NativeDisableParallelForRestriction] public double3F wind;
+            [NativeDisableParallelForRestriction] public double2F wind;
             public double intensity;
 
-            public VenturiJob(double3F wind, doubleF height, ref Parameters P)
+            public VenturiJob(double2F wind, doubleF height, ref Parameters P)
             {
                 this.wind = wind;
                 this.height = height;
@@ -69,19 +87,19 @@ namespace TFM.Simulation
         
         #region Terrain Deflection
 
-        public static void TerrainDeflection(double3F wind, doubleF height, ref Parameters P)
+        public static void TerrainDeflection(double2F wind, doubleF height, ref Parameters P)
         {
             var job = new TerrainDeflectionJob(wind, height, ref P);
             job.Run(height.Length);
         }
 
-        public static JobHandle TerrainDeflection(double3F wind, doubleF height, ref Parameters P, JobHandle dependsOn)
+        public static JobHandle TerrainDeflection(double2F wind, doubleF height, ref Parameters P, JobHandle dependsOn)
         {
             var job = new TerrainDeflectionJob(wind, height, ref P);
             return job.Schedule(height.Length, dependsOn);
         }
         
-        public static JobHandle TerrainDeflectionParallel(double3F wind, doubleF height, ref Parameters P, JobHandle dependsOn)
+        public static JobHandle TerrainDeflectionParallel(double2F wind, doubleF height, ref Parameters P, JobHandle dependsOn)
         {
             var job = new TerrainDeflectionJob(wind, height, ref P);
             return job.ScheduleParallel(height.Length, 256, dependsOn);
@@ -90,10 +108,10 @@ namespace TFM.Simulation
         private struct TerrainDeflectionJob : IJobFor
         {
             [ReadOnly] public doubleF height;
-            [NativeDisableParallelForRestriction] public double3F wind;
+            [NativeDisableParallelForRestriction] public double2F wind;
             public double intensity;
 
-            public TerrainDeflectionJob(double3F wind, doubleF height, ref Parameters P)
+            public TerrainDeflectionJob(double2F wind, doubleF height, ref Parameters P)
             {
                 this.wind = wind;
                 this.height = height;
@@ -106,8 +124,8 @@ namespace TFM.Simulation
                 var nxz = normal.xz;
                 var cw = vec.cw(nxz);
                 var ccw = vec.ccw(nxz);
-                var nxzt = select(ccw, cw, dot(cw, wind[index].xz) > 0);
-                wind[index] = wind[index] * (1 - length(nxz)) + intensity * length(wind[index]) * double3(nxzt, 0).xzy;
+                var nxzt = select(ccw, cw, dot(cw, wind[index]) > 0);
+                wind[index] = wind[index] * (1 - length(nxz)) + intensity * length(wind[index]) * nxzt;
             }
         }
         
@@ -115,17 +133,17 @@ namespace TFM.Simulation
 
         #region Wind Effect Surface
         
-        public static void WindEffectSurface(double3F wind, doubleF height, doubleF altitude, ref Parameters P)
+        public static void WindEffectSurface(double2F wind, doubleF vspeed, doubleF height, doubleF altitude, double windSpeed, ref Parameters P)
         {
             for (int i = 0; i < wind.Length; i++)
             {
                 altitude[i] = height[i];
                 var w = wind[i];
-                w.y = dot(w.xz, field.gradient(height, i));
+                w.y = dot(w * windSpeed, field.gradient(height, i));
                 wind[i] = w;
             }
 
-            var job = new WindEffectSurfaceJob(wind, height, height, altitude, 0, ref P);
+            var job = new WindEffectSurfaceJob(wind, vspeed, height, height, altitude, windSpeed, 0, ref P);
             for (int i = 0; i < P.SurfaceMaxIterations * 2; i++)
             {
                 job.iteration = i;
@@ -133,64 +151,117 @@ namespace TFM.Simulation
             }
         }
 
-        public static JobHandle WindEffectSurface(double3F wind, doubleF height, doubleF altitude,
-            ref Parameters P, JobHandle dependsOn)
+        public static JobHandle WindEffectSurface(double2F wind, doubleF vspeed, doubleF height, ScalarField2D altitude,
+            ScalarField2D terrain, ref Parameters P, JobHandle dependsOn)
         {
-            var init = new InitializeWESValuesJob(wind, height, altitude);
-            dependsOn = init.Schedule(wind.Length, dependsOn);
-            
-            var job = new WindEffectSurfaceJob(wind, height, height, altitude, 0, ref P);
-            for (int i = 0; i < P.SurfaceMaxIterations * 2; i++)
+            var gaussian = new doubleF(height, Allocator.TempJob);
+            var gaj = new GaussianJob
             {
-                job.iteration = i;
-                dependsOn = job.ScheduleParallel(wind.Length, 64, dependsOn);
+                height = height,
+                gaussian = gaussian,
+                kernel = 15,
+            };
+            dependsOn = gaj.ScheduleParallel(height.Length, 64, dependsOn);
+            
+            for (int j = 0; j < P.SurfaceSamples; j++)
+            {
+                var windSpeed = (j + 1) * P.SurfaceSpeedIncrement;
+                var altitudeLayer = altitude.Layer(j);
+                var terrainEffectLayer = terrain.Layer(j);
+                
+                var ivj = new InitializeWESValuesJob(wind, vspeed, height, gaussian, altitudeLayer, windSpeed);
+                dependsOn = ivj.Schedule(wind.Length, dependsOn);
+            
+                var wsj = new WindEffectSurfaceJob(wind, vspeed, height, gaussian, altitudeLayer, windSpeed, 0, ref P);
+                for (int i = 0; i < P.SurfaceMaxIterations * 2; i++)
+                {
+                    wsj.iteration = i;
+                    dependsOn = wsj.ScheduleParallel(wind.Length, 64, dependsOn);
+                }
+
+                var tej = new TerrainEffectJob(wind, vspeed, terrainEffectLayer, windSpeed);
+                dependsOn = tej.Schedule(wind.Length, dependsOn);
             }
 
             return dependsOn;
         }
         
         [BurstCompile]
+        private struct GaussianJob : IJobFor
+        {
+            [ReadOnly] public doubleF height;
+            public doubleF gaussian;
+            public int kernel;
+            
+            public void Execute(int index)
+            {
+                double smooth = 0.005;
+                int2 cell = height.cell(index);
+                int2 start = clamp(cell - kernel, 0, height.dimension);
+                int2 end = clamp(cell + kernel + 1, 0, height.dimension);
+                double norm = 0, r = 0;
+                
+                for (int j = start.x; j < end.x; j++)
+                {
+                    for (int k = start.y; k < end.y; k++)
+                    {
+                        double2 d = (double2(j, k) - cell) * height.cellSize;
+                        double w = exp(-lengthsq(d) * smooth);
+                        norm += w;
+                        r += height[j, k] * w;
+                    }
+                }
+
+                gaussian[index] = r / norm;
+            }
+        }
+        
+        [BurstCompile]
         public struct InitializeWESValuesJob : IJobFor
         {
-            public double3F wind;
+            [ReadOnly] public double2F wind;
             [ReadOnly] public doubleF height, gaussian;
-            public doubleF altitude;
+            [WriteOnly] public doubleF altitude;
+            [WriteOnly] public doubleF vspeed;
+            public double speedMultiplier;
 
-            public InitializeWESValuesJob(double3F wind, doubleF height, doubleF altitude)
+            public InitializeWESValuesJob(double2F wind, doubleF vspeed, doubleF height, doubleF gaussian, doubleF altitude, double speedMultiplier)
             {
                 this.wind = wind;
+                this.vspeed = vspeed;
                 this.height = height;
                 this.altitude = altitude;
-                gaussian = height;
+                this.speedMultiplier = speedMultiplier;
+                this.gaussian = gaussian;
             }
             
             public void Execute(int index)
             {
                 altitude[index] = height[index];
-                var w = wind[index];
-                var vspeed = dot(w.xz, field.gradient(gaussian, index));
-                w.y = vspeed;
-                wind[index] = w;
+                vspeed[index] = dot(wind[index] * speedMultiplier, field.gradient(gaussian, index));
             }
         }
         
         [BurstCompile]
         public struct WindEffectSurfaceJob : IJobFor
         {
-            [NativeDisableParallelForRestriction] public double3F wind;
-            [NativeDisableParallelForRestriction] public doubleF altitude;
+            [ReadOnly] public double2F wind;
+            [NativeDisableParallelForRestriction] public doubleF altitude, vspeed;
             [ReadOnly] public doubleF height, gaussian;
+            public double windSpeed;
             public double falloff;
             public int iteration;
 
-            public WindEffectSurfaceJob(double3F wind, doubleF height, doubleF gaussian, doubleF altitude,
-                int iteration, ref Parameters P)
+            public WindEffectSurfaceJob(double2F wind, doubleF vspeed, doubleF height, doubleF gaussian, doubleF altitude,
+                double windSpeed, int iteration, ref Parameters P)
             {
                 this.wind = wind;
+                this.vspeed = vspeed;
                 this.height = height;
                 this.gaussian = gaussian;
                 this.altitude = altitude;
                 this.iteration = iteration;
+                this.windSpeed = windSpeed;
                 falloff = P.SurfaceFalloff;
             }
             
@@ -200,14 +271,14 @@ namespace TFM.Simulation
                 
                 var cell = height.cell(index);
                 
-                var wdir = wind[cell].xz;
+                var wdir = wind[cell] * windSpeed;
                 var n = cell - (int2)sign(wdir);
                 wdir = abs(wdir);
                 
                 if (any(n < 0) || any(n > wind.dimension - 1)) return;
 
                 var alt_n = double2(altitude[n.x, cell.y], altitude[cell.x, n.y]);
-                var spd_n = double2(wind[n.x, cell.y].y, wind[cell.x, n.y].y);
+                var spd_n = double2(vspeed[n.x, cell.y], vspeed[cell.x, n.y]);
 
                 var spd = mad(-falloff, wind.cellSize.x, dot(wdir, spd_n)) / csum(wdir);
                 var alt = mad(spd, wind.cellSize.x, dot(wdir, alt_n)) / csum(wdir);
@@ -223,9 +294,29 @@ namespace TFM.Simulation
                 }
                 
                 altitude[index] = alt;
-                var w = wind[index];
-                w.y = spd;
-                wind[index] = w;
+                vspeed[index] = spd;
+            }
+        }
+        
+        [BurstCompile]
+        public struct TerrainEffectJob : IJobFor
+        {
+            [ReadOnly] public double2F wind;
+            [ReadOnly] public doubleF vspeed;
+            [WriteOnly] public doubleF terrainEffect;
+            public double speedMultiplier;
+
+            public TerrainEffectJob(double2F wind, doubleF vspeed, doubleF terrainEffect, double speedMultiplier)
+            {
+                this.wind = wind;
+                this.vspeed = vspeed;
+                this.terrainEffect = terrainEffect;
+                this.speedMultiplier = speedMultiplier;
+            }
+            
+            public void Execute(int index)
+            {
+                terrainEffect[index] = dot(wind[index] * speedMultiplier, field.gradient(vspeed, index));
             }
         }
     }

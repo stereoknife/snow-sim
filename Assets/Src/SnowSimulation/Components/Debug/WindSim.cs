@@ -33,7 +33,7 @@ namespace TFM.Components
 
         private doubleF _height;
         private doubleF _gaussianHeight;
-        private double3F _wind;
+        private double2F _wind;
         private doubleF _alts, _spds, _altr, _spdr;
 
         private Mesh rtm, stm, rwm, swm;
@@ -41,11 +41,9 @@ namespace TFM.Components
         private Wind.WindEffectSurfaceJob wej;
         private RenderParams swrp, rwrp, strp, rtrp;
         private Transform t;
-        private FieldRenderer _fr;
 
         private void Awake()
         {
-            _fr = GetComponent<FieldRenderer>();
             t = transform;
             rtm = new Mesh();
             rtm.name = "Rough Terrain";
@@ -56,12 +54,12 @@ namespace TFM.Components
             swm = new Mesh();
             swm.name = "Smooth Wind";
             
-            var terrain = GetComponent<Terrain>();
-            var scale = double3(terrain.sizeX, terrain.height, terrain.sizeZ) * terrain.units;
+            var terrain = GetComponent<SimulationTerrain>();
+            var scale = terrain.size * terrain.units;
             _height = doubleF.FromTexture(terrain.heightmap, scale, Allocator.Persistent);
-            var heading = double3(cos(radians(windHeading)), 0, sin(radians(windHeading)));
+            var heading = double2(cos(radians(windHeading)), sin(radians(windHeading)));
             Debug.Log(heading);
-            _wind = new double3F(_height, Allocator.Persistent, heading * windSpeedAtBase);
+            _wind = new double2F(_height, Allocator.Persistent, heading * windSpeedAtBase);
             _alts = new doubleF(_height, Allocator.Persistent);
             _spds = new doubleF(_height, Allocator.Persistent);
             _altr = new doubleF(_height, Allocator.Persistent);
@@ -82,7 +80,7 @@ namespace TFM.Components
             var wp = Wind.Parameters.Default;
             jh0 = Wind.VenturiParallel(_wind, _height, ref wp, jh0);
             jh0 = Wind.TerrainDeflectionParallel(_wind, _height,  ref wp, jh0);
-            jh0 = _fr.RegisterField(_wind, FieldRenderer.Name.DeflectedWind, jh0);
+            //jh0 = _fr.RegisterField(_wind, FieldRenderer.Name.DeflectedWind, jh0);
             
             var init = new Wind.InitializeWESValuesJob
             {
@@ -142,9 +140,7 @@ namespace TFM.Components
                 wej.iteration++;
                 sjh = wej.ScheduleParallel(_wind.Length, 64, sjh);
                 wej.iteration++;
-                var jh0 = _alts.GenerateMesh(out smda, sjh);
-                var jh1 = _fr.RegisterField(_alts, FieldRenderer.Name.Heightmap, sjh);
-                sjh = JobHandle.CombineDependencies(jh0, jh1);
+                sjh = _alts.GenerateMesh(out smda, sjh);
             }
             
             if (updateRoughWind)
@@ -154,9 +150,7 @@ namespace TFM.Components
                 wej.iteration++;
                 rjh = wej.ScheduleParallel(_wind.Length, 64, rjh);
                 wej.iteration++;
-                var jh0 = _altr.GenerateMesh(out rmda, rjh);
-                var jh1 = _fr.RegisterField(_altr, FieldRenderer.Name.WindAltitude, rjh);
-                rjh = JobHandle.CombineDependencies(jh0, jh1);
+                rjh = _altr.GenerateMesh(out rmda, rjh);
             }
             
             JobHandle.CombineDependencies(sjh, rjh).Complete();

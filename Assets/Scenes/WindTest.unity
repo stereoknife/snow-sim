@@ -166,10 +166,12 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::TerrainGen
   heightmap: {fileID: 2800000, guid: 479c9c5b126d64d83b8135612b36cca2, type: 3}
-  sizeX: 8.5
-  sizeZ: 8.5
-  height: 3.3
+  size:
+    x: 0
+    y: 0
+    z: 0
   units: 1000
+  cache: {fileID: 0}
 --- !u!114 &854384940
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -195,7 +197,7 @@ MonoBehaviour:
   drawSmoothWind: 1
   drawRoughWind: 0
   drawSmoothTerrain: 0
-  drawRoughTerrain: 1
+  drawRoughTerrain: 0
 --- !u!114 &854384941
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -16,6 +16,66 @@ namespace TFM.Simulation
 {
     public static class Lighting
     {
+        public struct Parameters
+        {
+            // Lighting intensity
+            public double IntensityDirect;
+            public double IntensityAmbient;
+            public double IntensityIndirect;
+            
+            // Direct lighting
+            public float DirectLatitude;
+            public int DirectStartingDay;
+            public int DirectEndDay;
+            public int DirectDaysBetweenSamples;
+            public int DirectHoursBetweenSamples;
+            
+            // Indirect lighting
+            public int IndirectAngularSamples;
+            public int IndirectDistanceSamples;
+            public double IndirectMaxDistance;
+            
+            // Temperature
+            public double TemperatureIncreasePerMetre;
+            public double TemperatureIncreasePerSunlight;
+
+            public static Parameters Default => new()
+            {
+                IntensityDirect = 1,
+                IntensityAmbient = 1,
+                IntensityIndirect = 1,
+                DirectLatitude = 0,
+                DirectStartingDay = 0,
+                DirectEndDay = 365,
+                DirectDaysBetweenSamples = 7,
+                DirectHoursBetweenSamples = 2,
+                IndirectAngularSamples = 16,
+                IndirectDistanceSamples = 20,
+                IndirectMaxDistance = 50,
+                TemperatureIncreasePerMetre = -0.01,
+                TemperatureIncreasePerSunlight = 10,
+            };
+            
+            public int Hash()
+            {
+                var hash = new HashCode();
+                hash.Add(IntensityDirect);
+                hash.Add(IntensityAmbient);
+                hash.Add(IntensityIndirect);
+                hash.Add(DirectLatitude);
+                hash.Add(DirectStartingDay);
+                hash.Add(DirectEndDay);
+                hash.Add(DirectDaysBetweenSamples);
+                hash.Add(DirectHoursBetweenSamples);
+                hash.Add(IndirectAngularSamples);
+                hash.Add(IndirectDistanceSamples);
+                hash.Add(IndirectMaxDistance);
+                hash.Add(TemperatureIncreasePerMetre);
+                hash.Add(TemperatureIncreasePerSunlight);
+                return hash.ToHashCode();
+            }
+        }
+        
         #region Light Direction
 
         public static double3 LightDirection(double latitude, int day, double hour)
@@ -43,6 +103,7 @@ namespace TFM.Simulation
             double xhor = x * sin(rlatit) - z * cos(rlatit);
             double yhor = y;
             double zhor = x * cos(rlatit) + z * sin(rlatit);
+            
             // Azimuth angle
             azim = atan2(yhor, xhor) + PI_DBL;
             azim %= PI2_DBL;
@@ -61,21 +122,20 @@ namespace TFM.Simulation
         public static void DirectLighting(
             in doubleF heightfield,
             doubleF output,
-            double latitude,
-            int daySamples,
-            int hourSamples,
-            int start = 0,
-            int end = 365
+            ref Parameters P
         )
         {
-            if (start > end) start -= 365;
-            double k = lipschitz(heightfield);
+            var start = P.DirectStartingDay;
+            if (start > P.DirectEndDay) start -= 365;
+            var k = lipschitz(heightfield);
+            var daySamples = 365 / P.DirectDaysBetweenSamples;
+            var hourSamples = 24 / P.DirectHoursBetweenSamples;
             int n = daySamples * hourSamples;
-            for (int d = start; d < end; d += daySamples)
+            for (int d = start; d < P.DirectEndDay; d += daySamples)
             {
                 for (int h = 0; h < 24; h += hourSamples)
                 {
-                    var light = LightDirection(latitude, d, h);
+                    var light = LightDirection(P.DirectLatitude, d, h);
                     for (int i = 0; i < heightfield.Length; i++)
                     {
                         double shadow = ComputeShadowing(in heightfield, i, light, k);
@@ -88,15 +148,11 @@ namespace TFM.Simulation
         public static JobHandle DirectLighting(
             in doubleF heightfield,
             doubleF output,
-            double latitude,
-            int daySamples,
-            int hourSamples,
-            JobHandle dependsOn,
-            int start = 0,
-            int end = 365
+            ref Parameters P,
+            JobHandle dependsOn
         )
         {
-            double k = lipschitz(heightfield);
+            var k = lipschitz(heightfield);
             
             var job = new DirectLightingJob
             {
@@ -105,6 +161,11 @@ namespace TFM.Simulation
                 k = k,
                 light = default,
             };
+            
+            var start = P.DirectStartingDay;
+            var end = P.DirectEndDay;
+            var daySamples = 365 / P.DirectDaysBetweenSamples;
+            var hourSamples = 24 / P.DirectHoursBetweenSamples;
 
             var jh = new JobHandle();
             if (start > end) start -= 365;
@@ -113,11 +174,13 @@ namespace TFM.Simulation
             {
                 for (int h = 0; h < 24; h += hourSamples)
                 {
-                    var l = job.light = LightDirection(latitude, d, h);
+                    n++;
+                    var l = job.light = LightDirection(P.DirectLatitude, d, h);
                     if (l.y <= 0) continue;
+                    Debug.DrawLine(Vector3.zero, (float3)l, Color.red, 60);
+                    Debug.Log($"Light direction: {l.xz}");
                     var njh = job.Schedule(heightfield.field.Length, dependsOn);
                     jh = JobHandle.CombineDependencies(jh, njh);
-                    n++;
                 }
             }
 
@@ -162,7 +225,6 @@ namespace TFM.Simulation
         
         private static double ComputeShadowing(in doubleF heightfield, int i, double3 lightDirection, double k)
         {
-            int2 startcell = heightfield.cell(i);
             double3 s = double3(heightfield.cell(i) * heightfield.cellSize, heightfield[i]).xzy;
             double minStep = sqrt(2 * square(heightfield.cellSize.x) * lengthsq(lightDirection) / csum(abs(lightDirection.xz)));
             s += lightDirection * minStep;
@@ -323,21 +385,19 @@ namespace TFM.Simulation
         #endregion
         
         
-        #region IndirectLighting
+        #region Indirect Lighting
 
         public static void IndirectLighting(
             in doubleF heightfield,
             in doubleF directLighting,
             doubleF output,
-            int distanceSamples,
-            int angularSamples,
-            double maxDistance,
-            Random rng
+            Random rng,
+            ref Parameters P
         )
         {
             for (int receiver = 0; receiver < heightfield.field.Length; receiver++)
             {
-                output[receiver] = ComputeIndirectLighting(in heightfield, in directLighting, receiver, distanceSamples, angularSamples, maxDistance, rng);
+                output[receiver] = ComputeIndirectLighting(in heightfield, in directLighting, receiver, P.IndirectDistanceSamples, P.IndirectAngularSamples, P.IndirectMaxDistance, rng);
             }
         }
 
@@ -345,9 +405,7 @@ namespace TFM.Simulation
             in doubleF heightfield,
             in doubleF directLighting,
             doubleF output,
-            int distanceSamples,
-            int angularSamples,
-            double maxDistance,
+            ref Parameters P,
             JobHandle dependsOn
         )
         {
@@ -356,9 +414,9 @@ namespace TFM.Simulation
                 heightfield = heightfield,
                 directLighting = directLighting,
                 output = output,
-                distanceSamples = distanceSamples,
-                angularSamples = angularSamples,
-                maxDistance = maxDistance,
+                distanceSamples = P.IndirectDistanceSamples,
+                angularSamples = P.IndirectAngularSamples,
+                maxDistance = P.IndirectMaxDistance,
             };
             
             return job.Schedule(heightfield.field.Length, dependsOn);
@@ -368,9 +426,7 @@ namespace TFM.Simulation
             in doubleF heightfield,
             in doubleF directLighting,
             doubleF output,
-            int distanceSamples,
-            int angularSamples,
-            double maxDistance,
+            ref Parameters P,
             JobHandle dependsOn
         )
         {
@@ -379,9 +435,9 @@ namespace TFM.Simulation
                 heightfield = heightfield,
                 directLighting = directLighting,
                 output = output,
-                distanceSamples = distanceSamples,
-                angularSamples = angularSamples,
-                maxDistance = maxDistance,
+                distanceSamples = P.IndirectDistanceSamples,
+                angularSamples = P.IndirectAngularSamples,
+                maxDistance = P.IndirectMaxDistance,
             };
             
             return job.ScheduleParallel(heightfield.field.Length, 128, dependsOn);
@@ -392,7 +448,7 @@ namespace TFM.Simulation
         {
             [ReadOnly] public doubleF heightfield;
             [ReadOnly] public doubleF directLighting;
-            [NativeDisableParallelForRestriction] public doubleF output;
+            [WriteOnly] public doubleF output;
             public int distanceSamples;
             public int angularSamples;
             public double maxDistance;
@@ -445,6 +501,7 @@ namespace TFM.Simulation
                     
                     int2 sender = int2(rCell + theta * r);
                     if (any(sender < 0) || any(sender >= heightfield.dimension)) continue;
+                    
                     double3 sPos = heightfield.coord(sender);
                     double3 sNormal = normal(heightfield, sender);
                     
@@ -460,6 +517,98 @@ namespace TFM.Simulation
             return value;
         }
         
+        #endregion
+
+
+        #region Temperature
+        
+        public static void Temperature(doubleF output, doubleF direct, doubleF ambient, doubleF indirect, doubleF height, ref Parameters P)
+        {
+            add(direct, output);
+            add(ambient, output);
+            add(indirect, output);
+
+            normalize(output);
+
+            new ComputeTemperature(height, output, ref P).Run(output.Length);
+        }
+
+        public static JobHandle Temperature(doubleF output, doubleF direct, doubleF ambient, doubleF indirect, doubleF height, ref Parameters P, JobHandle dependsOn)
+        {
+            dependsOn = Add(direct, output, dependsOn);
+            dependsOn = Add(ambient, output, dependsOn);
+            dependsOn = Add(indirect, output, dependsOn);
+
+            dependsOn = new NormalizeTemperature { Temperature = output }.Schedule(dependsOn);
+
+            dependsOn = new ComputeTemperature(height, output, ref P)
+                .Schedule(output.Length, dependsOn);
+
+            return dependsOn;
+        }
+        
+        public static JobHandle TemperatureParallel(doubleF output, doubleF direct, doubleF ambient, doubleF indirect, doubleF height, ref Parameters P, JobHandle dependsOn)
+        {
+            dependsOn = Add(direct, output, dependsOn);
+            dependsOn = Add(ambient, output, dependsOn);
+            dependsOn = Add(indirect, output, dependsOn);
+
+            dependsOn = new NormalizeTemperature { Temperature = output }.Schedule(dependsOn);
+
+            //dependsOn = new ComputeTemperature(height, output, ref P)
+            //    .ScheduleParallel(output.Length, 64, dependsOn);
+
+            return dependsOn;
+        }
+
+        private static JobHandle Add(in doubleF x, doubleF to, JobHandle dependsOn)
+            => new AddJob { x = x, to = to }.Schedule(dependsOn);
+        
+        private struct AddJob : IJob
+        {
+            [ReadOnly] public doubleF x;
+            public doubleF to;
+
+            public void Execute()
+            {
+                add(x, to);
+            }
+        }
+        
+        [BurstCompile]
+        private struct NormalizeTemperature : IJob
+        {
+            public doubleF Temperature;
+            
+            public void Execute()
+            {
+                normalize(Temperature);
+            }
+        }
+        
+        [BurstCompile]
+        private struct ComputeTemperature : IJobFor
+        {
+            [ReadOnly] public doubleF Heightfield;
+            public doubleF Temperature;
+            public double Kt;
+            public double Ki;
+
+            public ComputeTemperature(doubleF heightfield, doubleF temperature, ref Parameters P)
+            {
+                Heightfield = heightfield;
+                Temperature = temperature;
+                Kt = P.TemperatureIncreasePerMetre;
+                Ki = P.TemperatureIncreasePerSunlight;
+            }
+            
+            public void Execute(int index)
+            {
+                var light = Temperature[index];
+                Temperature[index] = Heightfield[index] * Kt + light * Ki;
+            }
+        }
+
         #endregion
     }
 }

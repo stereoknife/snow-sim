@@ -8,6 +8,7 @@ using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
 using static Unity.Mathematics.math;
+using Random = Unity.Mathematics.Random;
 
 namespace TFM.Simulation
 {
@@ -15,8 +16,6 @@ namespace TFM.Simulation
     {
         public struct Parameters
         {
-            // Snowfall
-            public double SnowfallMinHeight; //------- m
             public double SnowfallStrength; //-------- day⁻¹
             public double SnowfallMax; //------------- m
             public double SnowfallPowderRatio; //----- scalar
@@ -24,9 +23,6 @@ namespace TFM.Simulation
             public double CriticalSlopeMin; //-------- ratio
             public double CriticalSlopeTempFactor; //- °C⁻¹
             public double CriticalSlopeMaxTemp; //---- °C
-            
-            // Temp
-            public double TempBase;                 // °C
             
             // Melt
             public double MeltRate;                 // m / °C
@@ -49,6 +45,7 @@ namespace TFM.Simulation
             // Wind
             public double WindPlates;
             public double WindErosionRate;
+            public double WindSpeedPerLayer;
             
             // Avalanche
             public double AvalancheSnowDensity;                  // g/cm^-3
@@ -56,12 +53,21 @@ namespace TFM.Simulation
             public double AvalancheRestSlope;
             public double AvalancheGravity;
             public double AvalancheTemp;
+            
+            // Temp
+            public double TemperatureIncreasePerMetre;
+            public double TemperatureIncreasePerSunlight;
+            
+            // Weather
+            public double TempBase;                 // °C
+            public double WindSpeed;
 
             public static Parameters Default => new()
             {
                 TempBase = 0,
-                SnowfallMinHeight = 0,
-                
+                WindSpeed = 10,
+                TemperatureIncreasePerMetre = -0.01,
+                TemperatureIncreasePerSunlight = 10,
                 SnowfallStrength = 0.001,
                 SnowfallMax = 1000,
                 SnowfallPowderRatio = 5,
@@ -83,6 +89,7 @@ namespace TFM.Simulation
                 DiffusionRate = 0.5,
                 WindPlates = 0.1,
                 WindErosionRate = 0.1,
+                WindSpeedPerLayer = 1,
                 AvalancheSnowDensity = 0.5,
                 AvalancheRestSlope = tan(radians(30)),
                 AvalancheGravity = 9.81,
@@ -93,32 +100,31 @@ namespace TFM.Simulation
         
         #region Snowfall
 
-        public static void Snowfall(double4F snow, doubleF height, doubleF temperature, double step, ref Parameters P)
-            => new SnowfallJob(snow, height, temperature, step, ref P)
+        public static void Snowfall(double4F snow, doubleF height, doubleF illumination, double step, ref Parameters P)
+            => new SnowfallJob(snow, height, illumination, step, ref P)
                 .Run(snow.Length);
         
-        public static JobHandle Snowfall(double4F snow, doubleF height, doubleF temperature, double step, ref Parameters P, JobHandle dependsOn)
-            => new SnowfallJob(snow, height, temperature, step, ref P)
+        public static JobHandle Snowfall(double4F snow, doubleF height, doubleF illumination, double step, ref Parameters P, JobHandle dependsOn)
+            => new SnowfallJob(snow, height, illumination, step, ref P)
                 .ScheduleParallel(snow.Length, 512, dependsOn);
 
-        [BurstCompile]
+       // [BurstCompile]
         private struct SnowfallJob : IJobFor
         {
             [NativeDisableParallelForRestriction] public double4F snow;
-            [ReadOnly] public doubleF height, temperature;
+            [ReadOnly] public doubleF height, illumination;
             public double step;
-            public double sfPerDay, sfMinHeight, sfMax, sfPowderRatio, sfUnstableRatio;
+            public double sfPerDay, sfMax, sfPowderRatio, sfUnstableRatio;
             public double csMin, csTempFactor, csMaxTemp;
-            public double stabMinSlope, baseTemp;
+            public double stabMinSlope, baseTemp, tempIncAltitude, tempIncSunlight;
 
-            public SnowfallJob(double4F snow, doubleF height, doubleF temperature, double step, ref Parameters P)
+            public SnowfallJob(double4F snow, doubleF height, doubleF illumination, double step, ref Parameters P)
             {
                 this.snow = snow;
                 this.height = height;
-                this.temperature = temperature;
+                this.illumination = illumination;
                 this.step = step;
                 sfPerDay = P.SnowfallStrength;
-                sfMinHeight = P.SnowfallMinHeight;
                 sfMax = P.SnowfallMax;
                 sfPowderRatio = P.SnowfallPowderRatio;
                 sfUnstableRatio = P.SnowfallUnstableRatio;
@@ -127,6 +133,8 @@ namespace TFM.Simulation
                 csMaxTemp = P.CriticalSlopeMaxTemp;
                 stabMinSlope = P.StabilityMinSlope;
                 baseTemp = P.TempBase;
+                tempIncAltitude = P.TemperatureIncreasePerMetre;
+                tempIncSunlight = P.TemperatureIncreasePerSunlight;
             }
             
             public void Execute(int index)
@@ -134,10 +142,11 @@ namespace TFM.Simulation
                 var slope = cmax(field.gradient(height, snow, index));
                 
                 // Get amount of snow that has fallen on this cell
-                var airTemp = (height[index] - sfMinHeight) * 0.01;
-                var dd = sfPerDay * clamp(airTemp, 0d, sfMax);
+                var airTemp = baseTemp + height[index] * tempIncAltitude;
+                var dd = sfPerDay * clamp(-airTemp, 0d, sfMax);
                 // Get critical slope
-                var cs = csMin + csTempFactor * max(0d, csMaxTemp - temperature[index] - baseTemp);
+                var cellTemp = airTemp + illumination[index] * tempIncSunlight;
+                var cs = csMin + csTempFactor * max(0d, csMaxTemp - cellTemp);
                 
                 // Ratio of powder snow
                 var xpow = saturate(sfPowderRatio * (slope - cs));
@@ -155,27 +164,27 @@ namespace TFM.Simulation
 
         #region Melt
         
-        public static void Melt(double4F snow, doubleF temperature, doubleF height, double step, ref Parameters P)
-            => new MeltJob(snow, temperature, height, step, ref P)
+        public static void Melt(double4F snow, doubleF illumination, doubleF height, double step, ref Parameters P)
+            => new MeltJob(snow, illumination, height, step, ref P)
                 .Run(snow.Length);
 
-        public static JobHandle Melt(double4F snow, doubleF temperature, doubleF height, double step, ref Parameters P, JobHandle dependsOn)
-            => new MeltJob(snow, temperature, height, step, ref P)
+        public static JobHandle Melt(double4F snow, doubleF illumination, doubleF height, double step, ref Parameters P, JobHandle dependsOn)
+            => new MeltJob(snow, illumination, height, step, ref P)
                 .ScheduleParallel(snow.Length, 256, dependsOn);
         
         [BurstCompile]
         private struct MeltJob : IJobFor
         {
             [NativeDisableParallelForRestriction] double4F snowF;
-            [ReadOnly] doubleF tempF, heightF;
+            [ReadOnly] doubleF illumination, heightF;
             private double step, tempBase, meltRate, meltTemp, meltCompactionEffect;
             private double stabStableTemp, stabUnstableTemp, stabFreezeTemp, stabHot, stabMedium, stabFreeze,
-                stabCompactionPressure, stabMinSlope, unstableFactor;
+                stabCompactionPressure, stabMinSlope, unstableFactor, tempIncAltitude, tempIncIllum;
 
-            public MeltJob(double4F snowF, doubleF tempF, doubleF heightF, double step, ref Parameters P)
+            public MeltJob(double4F snowF, doubleF illumination, doubleF heightF, double step, ref Parameters P)
             {
                 this.snowF = snowF;
-                this.tempF = tempF;
+                this.illumination = illumination;
                 this.heightF = heightF;
                 this.step = step;
                 tempBase = P.TempBase;
@@ -191,12 +200,15 @@ namespace TFM.Simulation
                 meltCompactionEffect = 0;
                 stabMinSlope = P.StabilityMinSlope;
                 unstableFactor = P.SnowfallUnstableRatio;
+                tempIncAltitude = P.TemperatureIncreasePerMetre;
+                tempIncIllum = P.TemperatureIncreasePerSunlight;
             }
             
             public void Execute(int index)
             {
-                var temperature = tempF[index] + tempBase;
                 var snow = snowF[index];
+                var cellHeight = heightF[index] + csum(snow);
+                var temperature = tempBase + illumination[index] * tempIncIllum + cellHeight * tempIncAltitude;
                 var pressure = csum(snow.yzw);
                 var slope = cmax(field.slope(heightF, snowF, index));
                 slope = max(0, slope - stabMinSlope) * unstableFactor;
@@ -348,9 +360,9 @@ namespace TFM.Simulation
         
         #region Transport
 
-        public static void Transport(double4F snow, double3F wind, doubleF windAltitude, doubleF height, double step, ref Parameters P)
+        public static void Transport(double4F snow, double2F wind, ScalarField2D windAltitude, ScalarField2D windTerrain, doubleF height, double step, ref Parameters P)
         {
-            var job = new TransportJob(snow, wind, windAltitude, height, step, ref P);
+            var job = new TransportJob(snow, wind, windAltitude, windTerrain, height, step, ref P);
             for (int stage = 0; stage < 5; stage++)
             {
                 job.stage = stage;
@@ -358,9 +370,9 @@ namespace TFM.Simulation
             }
         }
         
-        public static JobHandle Transport(double4F snow, double3F wind, doubleF windAltitude, doubleF height, double step, ref Parameters P, JobHandle dependsOn)
+        public static JobHandle Transport(double4F snow, double2F wind, ScalarField2D windAltitude, ScalarField2D windTerrain, doubleF height, double step, ref Parameters P, JobHandle dependsOn)
         {
-            var job = new TransportJob(snow, wind, windAltitude, height, step, ref P);
+            var job = new TransportJob(snow, wind, windAltitude, windTerrain, height, step, ref P);
             for (int stage = 0; stage < 5; stage++)
             {
                 job.stage = stage;
@@ -373,27 +385,37 @@ namespace TFM.Simulation
         private struct TransportJob : IJobFor
         {
             [NativeDisableParallelForRestriction] public double4F snow;
-            [ReadOnly] public double3F wind;
-            [ReadOnly] public doubleF windAltitude;
+            [ReadOnly] public double2F wind;
+            [ReadOnly] public doubleF windAltLow, windAltHigh, windTerrainLow, windTerrainHigh;
             [ReadOnly] public doubleF height;
-            private double stabMinSlope, unstableFactor, step, windErosion;
+            private double stabMinSlope, unstableFactor, step, windErosion, windSpeed, windLerp;
 
             // Add parameter
             private double windPlates;
             public int stage;
+            private bool lowLayerZero;
 
-            public TransportJob(double4F snow, double3F wind, doubleF windAltitude, doubleF height, double step, ref Parameters P)
+            public TransportJob(double4F snow, double2F wind, ScalarField2D windAltitude, ScalarField2D windTerrain, doubleF height, double step, ref Parameters P)
             {
                 this.snow = snow;
                 this.wind = wind;
                 this.height = height;
                 this.step = step;
-                this.windAltitude = windAltitude;
                 stabMinSlope = P.StabilityMinSlope;
                 unstableFactor = P.SnowfallUnstableRatio;
                 windPlates = P.WindPlates;
                 windErosion = P.WindErosionRate;
+                windSpeed = P.WindSpeed;
                 stage = 0;
+
+                var windLayer = P.WindSpeed / P.WindSpeedPerLayer - 1;
+                lowLayerZero = windLayer < 0;
+                windLayer = clamp(windLayer, 0, windAltitude.layers);
+                windAltLow = lowLayerZero ? height : windAltitude.Layer((int)floor(windLayer));
+                windAltHigh = windAltitude.Layer((int)ceil(windLayer));
+                windTerrainLow = windTerrain.Layer((int)floor(windLayer));
+                windTerrainHigh = windTerrain.Layer((int)ceil(windLayer));
+                windLerp = frac(windLayer);
             }
             
             public void Execute(int index)
@@ -401,41 +423,43 @@ namespace TFM.Simulation
                 int2 ij = snow.cell(index);
                 if ((ij.y * 2 + ij.x) % 5 != stage) return;
                 
+                // 0.01 is wind_snow_terrain
                 var grad2 = -field.gradient2(height, snow, index) * 0.01;
-                var w = abs(wind[index].xz);
-                var curv = dot(w, grad2);
+                var w = abs(wind[index] * windSpeed);
+                var curv = min(dot(w, grad2), 0);
                 var d = snow[index];
                 var snowAmt = csum(d);
-                
-                var erosion = clamp(curv * windErosion * step, 0, min(snowAmt, 1));
-                erosion = clamp(height[index] + snowAmt - windAltitude[index], 0, erosion) * step;
-                snowAmt -= erosion;
+                var windAltitude = lerp(windAltLow[index], windAltHigh[index], windLerp);
 
-                var windDir = (int2)sign(wind[index].xz);
+                curv = select(curv, 0, windAltitude - height[index] - snowAmt > 0);
+                
+                // 1 is wind_snow_capacity
+                var erosion = clamp(curv * windErosion, 0, min(snowAmt, 1));
+                erosion = clamp(height[index] + snowAmt - windAltitude, 0, erosion);
+                
+                var windDir = (int2)sign(wind[index]);
                 var windNeighbour = clamp(ij + windDir, 0, snow.dimension - 1);
                 
-                if (csum(w) > 0.001)
+                if (csum(w) > 0.001 && erosion > 0.001)
                 {
+                    erosion *= step;
                     var windNorm = w / csum(w);
                     var nd = snow[windNeighbour.x, ij.y];
-                    nd.y += erosion * windNorm.x;
+                    nd.w += erosion * windNorm.x;
                     snow[windNeighbour.x, ij.y] = nd;
                     nd = snow[ij.x, windNeighbour.y];
-                    nd.y += erosion * windNorm.y;
+                    nd.w += erosion * windNorm.y;
                     snow[ij.x, windNeighbour.y] = nd;
+                    d.w = max(d.w - erosion, 0);
                 }
                 
-                // Remaining snow turns into powder
-                
-                snowAmt -= erosion;
-                d.w = min(d.w, snowAmt);
-                d.z = min(d.z, snowAmt - d.w);
-                var stable = max(0, snowAmt - d.w - d.z);
-                
+                var stable = d.y + d.x;
                 var slope = cmax(field.slope(height, snow, ij));
                 var xuns = max(0, slope - stabMinSlope) * unstableFactor;
 
-                var windTerrain = dot(wind[index].xz, field.cgradient(wind, index).c1);
+                var windTerrainMin = select(windTerrainLow[index], 0, lowLayerZero);
+                var windTerrain = lerp(windTerrainMin, windTerrainHigh[index], windLerp);
+                //windTerrain = 0;
                 var unstability = min(stable, xuns * max(0, windTerrain) * windPlates);
                 d.z += unstability;
                 d.x = min(d.x, stable - unstability);
@@ -628,7 +652,7 @@ namespace TFM.Simulation
                 }
             }
         }
-        
+
         [BurstCompile]
         private struct AvalancheSnowJob : IJobFor
         {
