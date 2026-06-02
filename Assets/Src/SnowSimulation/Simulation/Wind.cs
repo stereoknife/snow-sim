@@ -183,6 +183,8 @@ namespace TFM.Simulation
                 dependsOn = tej.Schedule(wind.Length, dependsOn);
             }
 
+            dependsOn = gaussian.Dispose(dependsOn);
+
             return dependsOn;
         }
         

@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using HPML.Utils;
+using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
@@ -39,7 +40,8 @@ namespace HPML
             job.Run();
         }
         
-        internal struct CopyDoubleToTexture : IJob
+        [BurstCompile]
+        private struct CopyDoubleToTexture : IJob
         {
             [WriteOnly] public NativeArray<Color32> texture;
             [ReadOnly] public NativeArray<double> array;
@@ -58,12 +60,13 @@ namespace HPML
                 
                 for (int i = 0; i < texture.Length; i++)
                 {
-                    texture[i] = Color.Lerp(color0, color1, saturate((float)unlerp(mn, mx, array[i])));
+                    texture[i] = Color.Lerp(color0, color1, (float)saturate(unlerp(mn, mx, array[i])));
                 }
             }
         }
         
-        internal struct CopyDouble3ToTexture : IJob
+        [BurstCompile]
+        private struct CopyDouble3ToTexture : IJob
         {
             [WriteOnly] public NativeArray<Color32> texture;
             [ReadOnly] public NativeArray<double3> array;

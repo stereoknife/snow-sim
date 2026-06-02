@@ -477,8 +477,9 @@ namespace TFM.Components
             dependsOn = Wind.VenturiParallel(_wind, _height, ref windParams, dependsOn);
             dependsOn = Wind.TerrainDeflectionParallel(_wind, _height, ref windParams, dependsOn);
             dependsOn = Wind.WindEffectSurface(_wind, wsf, _height, _windAltitude,  _terrainEffect, ref windParams, dependsOn);
-
-            return wsf.Dispose(dependsOn);
+            dependsOn = wsf.Dispose(dependsOn);
+            
+            return dependsOn;
         }
 
         private void OnGUI()

@@ -174,13 +174,13 @@ namespace TFM.Simulation
             {
                 for (int h = 0; h < 24; h += hourSamples)
                 {
-                    n++;
                     var l = job.light = LightDirection(P.DirectLatitude, d, h);
                     if (l.y <= 0) continue;
                     Debug.DrawLine(Vector3.zero, (float3)l, Color.red, 60);
                     Debug.Log($"Light direction: {l.xz}");
                     var njh = job.Schedule(heightfield.field.Length, dependsOn);
                     jh = JobHandle.CombineDependencies(jh, njh);
+                    n++;
                 }
             }
 
@@ -318,7 +318,7 @@ namespace TFM.Simulation
                 double3 rejection = dot(normal, horizon) * normal;
                 // Since horizon is normalized and tangent is its projection, the norm of tangent is the cosine of the angle
                 double3 tangent = horizon - rejection;
-                double occlusion = PI_DBL * select(1, lengthsq(tangent), rejection.y > 0) / 8;
+                double occlusion = select(1, lengthsq(tangent), rejection.y > 0) / 8;
 
                 if (concurrent)
                 {
@@ -524,65 +524,67 @@ namespace TFM.Simulation
         
         public static void Temperature(doubleF output, doubleF direct, doubleF ambient, doubleF indirect, doubleF height, ref Parameters P)
         {
-            add(direct, output);
-            add(ambient, output);
-            add(indirect, output);
+            var job = new TempAddJob
+            {
+                direct = direct,
+                indirect = indirect,
+                ambient = ambient,
+                output = output,
+                directFactor = P.IntensityDirect,
+                indirectFactor = P.IntensityIndirect,
+                ambientFactor = P.IntensityAmbient
+            };
 
-            normalize(output);
-
-            new ComputeTemperature(height, output, ref P).Run(output.Length);
+            job.Run(output.Length);
         }
 
         public static JobHandle Temperature(doubleF output, doubleF direct, doubleF ambient, doubleF indirect, doubleF height, ref Parameters P, JobHandle dependsOn)
         {
-            dependsOn = Add(direct, output, dependsOn);
-            dependsOn = Add(ambient, output, dependsOn);
-            dependsOn = Add(indirect, output, dependsOn);
+            var job = new TempAddJob
+            {
+                direct = direct,
+                indirect = indirect,
+                ambient = ambient,
+                output = output,
+                directFactor = P.IntensityDirect,
+                indirectFactor = P.IntensityIndirect,
+                ambientFactor = P.IntensityAmbient
+            };
 
-            dependsOn = new NormalizeTemperature { Temperature = output }.Schedule(dependsOn);
-
-            dependsOn = new ComputeTemperature(height, output, ref P)
-                .Schedule(output.Length, dependsOn);
+            dependsOn = job.Schedule(output.Length, dependsOn);
 
             return dependsOn;
         }
         
         public static JobHandle TemperatureParallel(doubleF output, doubleF direct, doubleF ambient, doubleF indirect, doubleF height, ref Parameters P, JobHandle dependsOn)
         {
-            dependsOn = Add(direct, output, dependsOn);
-            dependsOn = Add(ambient, output, dependsOn);
-            dependsOn = Add(indirect, output, dependsOn);
+            var job = new TempAddJob
+            {
+                direct = direct,
+                indirect = indirect,
+                ambient = ambient,
+                output = output,
+                directFactor = P.IntensityDirect,
+                indirectFactor = P.IntensityIndirect,
+                ambientFactor = P.IntensityAmbient
+            };
 
-            dependsOn = new NormalizeTemperature { Temperature = output }.Schedule(dependsOn);
-
-            //dependsOn = new ComputeTemperature(height, output, ref P)
-            //    .ScheduleParallel(output.Length, 64, dependsOn);
+            dependsOn = job.ScheduleParallel(output.Length, 64, dependsOn);
 
             return dependsOn;
         }
-
-        private static JobHandle Add(in doubleF x, doubleF to, JobHandle dependsOn)
-            => new AddJob { x = x, to = to }.Schedule(dependsOn);
-        
-        private struct AddJob : IJob
-        {
-            [ReadOnly] public doubleF x;
-            public doubleF to;
-
-            public void Execute()
-            {
-                add(x, to);
-            }
-        }
         
         [BurstCompile]
-        private struct NormalizeTemperature : IJob
+        private struct TempAddJob : IJobFor
         {
-            public doubleF Temperature;
-            
-            public void Execute()
+            [ReadOnly] public doubleF direct, ambient, indirect;
+            [WriteOnly] public doubleF output;
+            public double directFactor, ambientFactor, indirectFactor;
+
+            public void Execute(int index)
             {
-                normalize(Temperature);
+                output[index] = (direct[index] * directFactor + ambient[index] * ambientFactor + indirect[index] * indirectFactor)
+                                / (indirectFactor + ambientFactor + directFactor);
             }
         }
         
