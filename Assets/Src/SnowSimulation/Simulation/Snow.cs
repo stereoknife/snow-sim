@@ -61,11 +61,13 @@ namespace TFM.Simulation
             // Weather
             public double TempBase;                 // °C
             public double WindSpeed;
+            public double CloudCover;
 
             public static Parameters Default => new()
             {
                 TempBase = 0,
                 WindSpeed = 10,
+                CloudCover = 0,
                 TemperatureIncreasePerMetre = -0.01,
                 TemperatureIncreasePerSunlight = 10,
                 SnowfallStrength = 0.001,
@@ -179,7 +181,7 @@ namespace TFM.Simulation
             [ReadOnly] doubleF illumination, heightF;
             private double step, tempBase, meltRate, meltTemp, meltCompactionEffect;
             private double stabStableTemp, stabUnstableTemp, stabFreezeTemp, stabHot, stabMedium, stabFreeze,
-                stabCompactionPressure, stabMinSlope, unstableFactor, tempIncAltitude, tempIncIllum;
+                stabCompactionPressure, stabMinSlope, unstableFactor, tempIncAltitude, tempIncIllum, cloudCover;
 
             public MeltJob(double4F snowF, doubleF illumination, doubleF heightF, double step, ref Parameters P)
             {
@@ -202,13 +204,14 @@ namespace TFM.Simulation
                 unstableFactor = P.SnowfallUnstableRatio;
                 tempIncAltitude = P.TemperatureIncreasePerMetre;
                 tempIncIllum = P.TemperatureIncreasePerSunlight;
+                cloudCover = P.CloudCover;
             }
             
             public void Execute(int index)
             {
                 var snow = snowF[index];
                 var cellHeight = heightF[index] + csum(snow);
-                var temperature = tempBase + illumination[index] * tempIncIllum + cellHeight * tempIncAltitude;
+                var temperature = tempBase + illumination[index] * tempIncIllum * (1 - cloudCover) + cellHeight * tempIncAltitude;
                 var pressure = csum(snow.yzw);
                 var slope = cmax(field.slope(heightF, snowF, index));
                 slope = max(0, slope - stabMinSlope) * unstableFactor;

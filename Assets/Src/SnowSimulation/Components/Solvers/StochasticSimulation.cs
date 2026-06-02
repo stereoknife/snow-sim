@@ -153,7 +153,7 @@ namespace TFM.Components.Solvers
                 var t = frac(simulationTime);
                 _parameters.TempBase = lerp(_tempTimeline[low], _tempTimeline[high], t);
                 _parameters.WindSpeed = lerp(_windTimeline[low], _windTimeline[high], t);
-                _parameters.TemperatureIncreasePerSunlight = 1f - lerp(_cloudTimeline[low], _cloudTimeline[high], t);
+                _parameters.CloudCover = lerp(_cloudTimeline[low], _cloudTimeline[high], t);
                 _parameters.SnowfallStrength = lerp(_precipTimeline[low], _precipTimeline[high], t);
 
                 if (_parameters.SnowfallStrength > 0.0000000001)
