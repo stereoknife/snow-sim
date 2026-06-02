@@ -60,6 +60,7 @@ namespace TFM.Components.Solvers
         private bool _useTempTimeline = true;
         
         public float simulationTime { get; private set; }
+        public int simulationFrames { get; private set; }
         
         public Snow.Parameters Parameters { set => _parameters = value; }
         public doubleF Height { set => _height = value; }
@@ -126,6 +127,7 @@ namespace TFM.Components.Solvers
         public void Reset()
         {
             simulationTime = 0f;
+            simulationFrames = 0;
             _rng.InitState(_seed);
             _periods[EventId.MeltStep] = 0.5f;
             _periods[EventId.TransportStep] = 0.5f;
@@ -161,7 +163,8 @@ namespace TFM.Components.Solvers
                 Debug.LogError("At least one simulation event must be enabled.");
                 return (EventId)(-1);
             }
-            
+
+            simulationFrames++;
             simulationTime += 1f / totalProb;
             var random = _rng.NextFloat() * totalProb;
 

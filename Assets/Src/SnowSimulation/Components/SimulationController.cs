@@ -84,7 +84,7 @@ namespace TFM.Components
         private TerrainMeshRenderer _renderer;
 
         [Button]
-        void StartSimulation()
+        private void StartSimulation()
         {
             runSim = true;
             //_simulation.Reset();
@@ -92,7 +92,7 @@ namespace TFM.Components
         }
 
         [Button]
-        void PauseSimulation()
+        private void PauseSimulation()
         {
             runSim = false;
         }
@@ -260,10 +260,21 @@ namespace TFM.Components
                 wh = GenerateWindData(wh);
 
             lh = _renderer.AddTexture(TerrainMeshRenderer.TextureId.CombinedIllumination, _illumination, lh);
-            
-            var hh = Terrain.Hazard(_height, _hazard, default);
-            
+
+            var hh = GenerateHazardData(default);
             JobHandle.CombineDependencies(lh, wh, hh).Complete();
+
+            var hdf = new doubleF(_hazard, Allocator.TempJob);
+            hdf[0] = _hazard[0];
+            for (int i = 1; i < _hazard.Length; i++)
+            {
+                hdf[i] = _hazard[i]-_hazard[i-1];
+                
+                if (isnan(_hazard[i]) && !isnan(_hazard[i-1])) Debug.Log($"{_hazard[i]}, {_hazard[i-1]}");
+            }
+            
+            _renderer.AddTexture(TerrainMeshRenderer.TextureId.AvalancheHazard, hdf);
+            hdf.Dispose();
             SaveCacheData();
             
             _renderer.Apply();
@@ -491,6 +502,35 @@ namespace TFM.Components
             
             return dependsOn;
         }
+
+        private JobHandle GenerateHazardData(JobHandle dependsOn)
+        {
+            var rf = new doubleF(_height, Allocator.TempJob);
+            var gf = new doubleF(_height, Allocator.TempJob);
+            var cf = new NativeArray<int>(_height.Length, Allocator.TempJob);
+            
+            var rh = Terrain.Roughness(_height, rf, dependsOn);
+            var gh = Terrain.Gradient(_height, gf, dependsOn);
+            var ch = Terrain.Curvature(_height, cf, dependsOn);
+
+            rh = _renderer.AddTexture(TerrainMeshRenderer.TextureId.TerrainRoughness, rf, rh);
+            gh = _renderer.AddTexture(TerrainMeshRenderer.TextureId.TerrainGradient, gf, gh);
+            ch = _renderer.AddTexture(TerrainMeshRenderer.TextureId.TerrainCurvatureCategory, _height, cf, ch);
+
+            rh = Terrain.RoughnessDist(rf, rh);
+            gh = Terrain.GradientDist(gf, gh);
+            
+            rh = _renderer.AddTexture(TerrainMeshRenderer.TextureId.RoughnessHazard, rf, rh);
+            gh = _renderer.AddTexture(TerrainMeshRenderer.TextureId.GradientHazard, gf, gh);
+            
+            var hh = JobHandle.CombineDependencies(rh, gh, ch);
+            hh = Terrain.Hazard(_hazard, gf, rf, cf, hh);
+            
+            return hh;
+        }
+
+        private double lnd(double x) =>
+            1 / (x * 0.53062825 * sqrt(PI2_DBL)) * exp(-pow(log(x) + 5.68397985, 2) / (2 * 0.53062825 * 0.53062825));
 
         private void OnGUI()
         {

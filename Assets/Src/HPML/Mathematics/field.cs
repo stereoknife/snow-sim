@@ -326,7 +326,7 @@ namespace HPML
                 {
                     var ij = int2(i, j) + at;
                     var xy = int2(i, j) * field.cellSize;
-                    var z = any(ij < 0 | ij >= field.dimension) ? 0 : field[ij];
+                    var z = any(ij < 0 | ij >= field.dimension) ? z0 : field[ij];
                     z -= z0;
 
                     var xy2 = xy * xy;
