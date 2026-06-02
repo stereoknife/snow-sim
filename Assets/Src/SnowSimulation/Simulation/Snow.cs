@@ -46,6 +46,7 @@ namespace TFM.Simulation
             public double WindPlates;
             public double WindErosionRate;
             public double WindSpeedPerLayer;
+            public double WindMaxSpeed;
             
             // Avalanche
             public double AvalancheSnowDensity;                  // g/cm^-3
@@ -62,12 +63,15 @@ namespace TFM.Simulation
             public double TempBase;                 // °C
             public double WindSpeed;
             public double CloudCover;
+            public double SnowfallIntensity;
 
             public static Parameters Default => new()
             {
                 TempBase = 0,
                 WindSpeed = 10,
                 CloudCover = 0,
+                SnowfallIntensity = 1,
+                
                 TemperatureIncreasePerMetre = -0.01,
                 TemperatureIncreasePerSunlight = 10,
                 SnowfallStrength = 0.001,
@@ -92,6 +96,7 @@ namespace TFM.Simulation
                 WindPlates = 0.1,
                 WindErosionRate = 0.1,
                 WindSpeedPerLayer = 1,
+                WindMaxSpeed = 10,
                 AvalancheSnowDensity = 0.5,
                 AvalancheRestSlope = tan(radians(30)),
                 AvalancheGravity = 9.81,
@@ -126,7 +131,7 @@ namespace TFM.Simulation
                 this.height = height;
                 this.illumination = illumination;
                 this.step = step;
-                sfPerDay = P.SnowfallStrength;
+                sfPerDay = P.SnowfallStrength * P.SnowfallIntensity;
                 sfMax = P.SnowfallMax;
                 sfPowderRatio = P.SnowfallPowderRatio;
                 sfUnstableRatio = P.SnowfallUnstableRatio;

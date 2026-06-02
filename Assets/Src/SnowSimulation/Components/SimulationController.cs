@@ -33,6 +33,11 @@ namespace TFM.Components
         [SerializeField] private bool melting;
         [SerializeField] private bool powderDiffusion;
         [SerializeField] private bool avalanche;
+        [Header("Timelines")]
+        [SerializeField] private bool temperatureTimeline;
+        [SerializeField] private bool precipitationTimeline;
+        [SerializeField] private bool windTimeline;
+        [SerializeField] private bool cloudCoverTimeline;
         [Header("Profiling")]
         [SerializeField] private bool enableProfiling;
         [SerializeField] private string outputFile;
@@ -281,21 +286,26 @@ namespace TFM.Components
             
             _simulation = new StochasticSimulation(1337)
             {
-                snow = _snow,
-                height = _height,
-                temperature = _illumination,
-                wind = _wind,
-                windAltitude = _windAltitude,
-                windTerrain = _terrainEffect,
-                flow = _flow,
-                moving = _moving,
-                hazard = _hazard,
-                tempTimeline = _tempTimeline,
-                cloudTimeline = _cloudTimeline,
-                precipTimeline = _precipTimeline,
-                windTimeline = _windTimeline,
-                parameters = Snow.Parameters.Default,
+                SnowLayers = _snow,
+                Height = _height,
+                Temperature = _illumination,
+                WindDirection = _wind,
+                WindAltitude = _windAltitude,
+                WindTerrain = _terrainEffect,
+                Flow = _flow,
+                Moving = _moving,
+                Hazard = _hazard,
+                TempTimeline = _tempTimeline,
+                CloudTimeline = _cloudTimeline,
+                PrecipTimeline = _precipTimeline,
+                WindTimeline = _windTimeline,
+                Parameters = Snow.Parameters.Default,
             };
+            
+            _simulation.SetUseCloudTimeline(cloudCoverTimeline);
+            _simulation.SetUsePrecipTimeline(precipitationTimeline);
+            _simulation.SetUseTempTimeline(temperatureTimeline);
+            _simulation.SetUseWindTimeline(windTimeline);
             
             SetSimulationParams();
         }
