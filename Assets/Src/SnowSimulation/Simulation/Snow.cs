@@ -27,6 +27,7 @@ namespace TFM.Simulation
             // Melt
             public double MeltRate;                 // m / °C
             public double MeltTemp;                 // °C
+            public double MeltVolumeFactor;
             
             // Stability
             public double StabilityStableTemp;          // °C
@@ -83,6 +84,7 @@ namespace TFM.Simulation
                 CriticalSlopeMaxTemp = -10,
                 MeltRate = 0.01,
                 MeltTemp = 0,
+                MeltVolumeFactor = 100,
                 StabilityMinSlope = 0.3,
                 StabilityStableTemp = -5,
                 StabilityUnstableTemp = 5,
@@ -186,7 +188,7 @@ namespace TFM.Simulation
             [ReadOnly] doubleF illumination, heightF;
             private double step, tempBase, meltRate, meltTemp, meltCompactionEffect;
             private double stabStableTemp, stabUnstableTemp, stabFreezeTemp, stabHot, stabMedium, stabFreeze,
-                stabCompactionPressure, stabMinSlope, unstableFactor, tempIncAltitude, tempIncIllum, cloudCover;
+                stabCompactionPressure, stabMinSlope, unstableFactor, tempIncAltitude, tempIncIllum, cloudCover, volFactor;
 
             public MeltJob(double4F snowF, doubleF illumination, doubleF heightF, double step, ref Parameters P)
             {
@@ -210,6 +212,7 @@ namespace TFM.Simulation
                 tempIncAltitude = P.TemperatureIncreasePerMetre;
                 tempIncIllum = P.TemperatureIncreasePerSunlight;
                 cloudCover = P.CloudCover;
+                volFactor = P.MeltVolumeFactor;
             }
             
             public void Execute(int index)
@@ -240,12 +243,12 @@ namespace TFM.Simulation
                     stability /= slope;
 
                 // Melting
-                var melt = -step * meltRate * max(0, temperature - meltTemp);
+                var melt = -step * meltRate * max(0, temperature - meltTemp) / max(1, volFactor * csum(snow));
                 var stable = csum(snow.xy);
-                var compaction = select(snow.x / stable, 0, stable < 0.0001);
+                //var compaction = select(snow.x / stable, 0, stable < 0.0001);
                 snow.w += melt; // powder
                 snow.z += min(0, snow.w); // unstable
-                snow.y += min(0, snow.z /* * (1 - compaction) * meltCompactionEffect */); // stable
+                snow.y += min(0, snow.z); // stable
                 snow.x += min(0, snow.y);
                 snow = select(snow, 0, snow < 0.001);
                 
