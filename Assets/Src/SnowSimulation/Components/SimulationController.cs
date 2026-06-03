@@ -529,9 +529,6 @@ namespace TFM.Components
             return hh;
         }
 
-        private double lnd(double x) =>
-            1 / (x * 0.53062825 * sqrt(PI2_DBL)) * exp(-pow(log(x) + 5.68397985, 2) / (2 * 0.53062825 * 0.53062825));
-
         private void OnGUI()
         {
             var t = _simulation.simulationTime;
