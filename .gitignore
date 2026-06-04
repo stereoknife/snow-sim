@@ -1,8 +1,7 @@
-Assets/cache/
-Assets/cache.meta
-Assets/TODO.txt*
-Assets/Notes.txt*
-Assets/Ideas.txt*
+/[Aa]ssets/cache/
+/[Aa]ssets/TODO.txt
+/[Aa]ssets/Notes.txt
+/[Aa]ssets/Ideas.txt
 
 # This .gitignore file should be placed at the root of your Unity project directory
 #
