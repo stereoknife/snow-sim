@@ -263,14 +263,16 @@ namespace TFM.Simulation
             {
                 // We assume snow temperature is air temperature if below 0 or 0 if above.
                 var s = snow[index];
-                var airTemp = tempBase + (height[index] + csum(s)) * tempIncAltitude;
+                var snowThickness = csum(s);
+                var airTemp = tempBase + (height[index] + snowThickness) * tempIncAltitude;
+                var snowTemp = min(airTemp, 0);
                 var airConduction = conductivity * max(airTemp, 0);
-                var neededRadiation = max(airTemp, 0) * csum(s) * heatCapacity;
+                var neededRadiation = -snowTemp * snowThickness * heatCapacity;
                 var solarRadiation = sunIntensity * illumination[index] * cloudFiltering * albedo;
                 var totalRadiation = solarRadiation + airConduction - neededRadiation;
-                var meltRate = totalRadiation / (latentHeat * vec.area(snow.cellSize));
-                
-                var melt = -step * meltRate;
+                var meltRate = totalRadiation * step / (latentHeat * snowThickness);
+
+                var melt = -saturate(meltRate) * snowThickness;
                 //var compaction = select(snow.x / stable, 0, stable < 0.0001);
                 s.w += melt; // powder
                 s.z += min(0, s.w); // unstable
@@ -322,6 +324,7 @@ namespace TFM.Simulation
             public void Execute(int index)
             {
                 var snow = snowF[index];
+                if (csum(snow) < 0.001) return;
                 var temperature = tempBase + illumination[index] * tempIncIllum * cloudCover + (heightF[index] + csum(snow)) * tempIncAltitude;
                 var pressure = csum(snow.yzw);
                 var slope = cmax(field.slope(heightF, snowF, index));
@@ -387,7 +390,7 @@ namespace TFM.Simulation
             return dependsOn;
         }
 
-        [BurstCompile]
+        //[BurstCompile]
         private struct DiffusionJob : IJobFor
         {
             [NativeDisableParallelForRestriction] public double4F snow;
@@ -421,7 +424,7 @@ namespace TFM.Simulation
                 var dr = snow[down.x, ij.y];
                 var npow = double4( du.w, dd.w, dl.w, dr.w);
                 
-                var h = height[ij];
+                var h = height[ij] + csum(snow[index]);
                 var hn = double4(
                     height[ij.x, up.y] + csum(du), 
                     height[ij.x, down.y] + csum(dd), 
