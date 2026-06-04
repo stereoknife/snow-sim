@@ -331,7 +331,7 @@ namespace TFM.Components
             // Temperature follows a sin curve starting between spring equinox and summer solstice
             // a * sin(b * (x - c)) + d
             var maxTemp = 30f;
-            var minTemp = -5;
+            var minTemp = -3;
             
             var a = (maxTemp - minTemp) / 2f;
             var b = PI2 / 365f;
@@ -339,10 +339,13 @@ namespace TFM.Components
             var d = (maxTemp + minTemp) / 2f;
 
             var startDay = parameters.LightingParameters.DirectStartingDay;
+            var minDay = 0;
             for (int i = 0; i < _tempTimeline.Length; i++)
             {
                 _tempTimeline[i] = a * sin(b * (i + startDay - c) - PI * 5f/8f) + d;
+                if (i > 0 && _tempTimeline[i] < _tempTimeline[i - 1]) minDay = i;
             }
+            Debug.Log($"min day {minDay}");
         }
 
         private void GenerateCloudPrecipTimelines()

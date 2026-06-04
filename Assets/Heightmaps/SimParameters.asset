@@ -20,7 +20,7 @@ MonoBehaviour:
     x: 1
     y: 11
   toDate:
-    x: 15
+    x: 30
     y: 4
   daysBetweenSamples: 7
   hoursBetweenSamples: 2

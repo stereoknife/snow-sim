@@ -155,7 +155,7 @@ namespace TFM.Components.Solvers
             if (_usePrecipTimeline) _frequencies[EventId.SnowfallStart] = 0f;
         }
 
-        private EventId Next()
+        private EventId Next(out float dt)
         {
             var totalProb = 0f;
             foreach (var id in _frequencies.Keys)
@@ -166,12 +166,12 @@ namespace TFM.Components.Solvers
 
             if (totalProb < 0.00001)
             {
+                dt = 0;
                 Debug.LogError("At least one simulation event must be enabled.");
                 return (EventId)(-1);
             }
-
-            simulationFrames++;
-            simulationTime += 1f / totalProb;
+            
+            dt = 1f / totalProb;
             var random = _rng.NextFloat() * totalProb;
 
             totalProb = 0f;
@@ -205,7 +205,7 @@ namespace TFM.Components.Solvers
                     _frequencies[EventId.SnowfallStep] = 0f;
             }
             
-            var ev = Next();
+            var ev = Next(out var dt);
             var jh = new JobHandle();
             var preEventTime = DateTime.Now;
             switch (ev)
@@ -263,6 +263,9 @@ namespace TFM.Components.Solvers
                 _profilingData[_profilingDataIndex] = (ev, simulationTime, (postEventTime - preEventTime).TotalMilliseconds);
                 _profilingDataIndex = (_profilingDataIndex + 1) % _profilingData.Length;
             }
+
+            simulationTime += dt;
+            simulationFrames++;
         }
 
         public void TriggerAvalanche(int cell = -1)

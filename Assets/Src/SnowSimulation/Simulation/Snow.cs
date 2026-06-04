@@ -84,7 +84,7 @@ namespace TFM.Simulation
                 CriticalSlopeMaxTemp = -10,
                 MeltRate = 0.01,
                 MeltTemp = 0,
-                MeltVolumeFactor = 100,
+                MeltVolumeFactor = 0,
                 StabilityMinSlope = 0.3,
                 StabilityStableTemp = -5,
                 StabilityUnstableTemp = 5,
