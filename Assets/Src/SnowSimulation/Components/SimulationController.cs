@@ -31,8 +31,10 @@ namespace TFM.Components
         [SerializeField] private bool snowfall;
         [SerializeField] private bool windTransport;
         [SerializeField] private bool melting;
+        [SerializeField] private bool stability;
         [SerializeField] private bool powderDiffusion;
         [SerializeField] private bool avalanche;
+        [SerializeField] private bool simpleMelt;
         [Header("Timelines")]
         [SerializeField] private bool temperatureTimeline;
         [SerializeField] private bool precipitationTimeline;
@@ -197,6 +199,9 @@ namespace TFM.Components
             _simulation.SetEventEnabled(StochasticSimulation.EventId.SnowfallEnd, snowfall);
             _simulation.SetEventEnabled(StochasticSimulation.EventId.AvalancheStart, avalanche);
             _simulation.SetEventEnabled(StochasticSimulation.EventId.AvalancheStep, avalanche);
+            _simulation.SetEventEnabled(StochasticSimulation.EventId.StabilityStep, stability);
+
+            _simulation.UseSimpleMelt = simpleMelt;
             
             if (enableProfiling)
                 _simulation.EnableProfiling(bufferSize);

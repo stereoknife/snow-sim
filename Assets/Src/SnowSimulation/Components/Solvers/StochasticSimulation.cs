@@ -20,6 +20,7 @@ namespace TFM.Components.Solvers
             MeltStep,
             TransportStep,
             DiffusionStep,
+            StabilityStep,
             SnowfallStep,
             SnowfallStart,
             SnowfallEnd,
@@ -58,6 +59,8 @@ namespace TFM.Components.Solvers
         private bool _useCloudTimeline = true;
         private bool _useWindTimeline = true;
         private bool _useTempTimeline = true;
+
+        private bool _useSimpleMelt = false;
         
         public float simulationTime { get; private set; }
         public int simulationFrames { get; private set; }
@@ -77,6 +80,8 @@ namespace TFM.Components.Solvers
         public NativeArray<double> WindTimeline { set => _windTimeline = value; }
         public NativeArray<double> CloudTimeline { set => _cloudTimeline = value; }
         public NativeArray<double> PrecipTimeline { set => _precipTimeline = value; }
+
+        public bool UseSimpleMelt { get => _useSimpleMelt; set => _useSimpleMelt = value; }
 
         public void SetUsePrecipTimeline(bool value)
         {
@@ -117,9 +122,9 @@ namespace TFM.Components.Solvers
         {
             _seed = seed;
             _rng = new Random();
-            _periods = new(8);
-            _frequencies = new(8);
-            _enabled = new(8);
+            _periods = new(9);
+            _frequencies = new(9);
+            _enabled = new(9);
             
             Reset();
         }
@@ -129,9 +134,10 @@ namespace TFM.Components.Solvers
             simulationTime = 0f;
             simulationFrames = 0;
             _rng.InitState(_seed);
-            _periods[EventId.MeltStep] = 0.5f;
+            _periods[EventId.MeltStep] = 1f;
             _periods[EventId.TransportStep] = 0.5f;
             _periods[EventId.DiffusionStep] = 0.5f;
+            _periods[EventId.StabilityStep] = 0.5f;
             _periods[EventId.SnowfallStep] = 0.5f;
             _periods[EventId.SnowfallStart] = 7f;
             _periods[EventId.SnowfallEnd] = 5f;
@@ -205,13 +211,18 @@ namespace TFM.Components.Solvers
             switch (ev)
             {
                 case EventId.MeltStep:
-                    jh = Snow.Melt(_snow, _temperature, _height, _periods[ev], ref _parameters, jh);
+                    jh = _useSimpleMelt
+                        ? Snow.MeltSimple(_snow, _temperature, _height, _periods[ev], ref _parameters, jh)
+                        : Snow.Melt(_snow, _temperature, _height, _periods[ev], ref _parameters, jh);
                     break;
                 case EventId.TransportStep:
                     jh = Snow.Transport(_snow, _windDirection, _windAltitude, _windTerrain, _height, _periods[ev], ref _parameters, jh);
                     break;
                 case EventId.DiffusionStep:
                     jh = Snow.Diffusion(_snow, _height, _periods[ev], ref _parameters, jh);
+                    break;
+                case EventId.StabilityStep:
+                    jh = Snow.Stability(_snow, _temperature, _height, _periods[ev], ref _parameters, jh);
                     break;
                 case EventId.SnowfallStep:
                     jh = Snow.Snowfall(_snow, _height, _temperature, _periods[ev], ref _parameters, jh);

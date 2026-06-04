@@ -173,24 +173,23 @@ namespace TFM.Simulation
 
         #region Melt
         
-        public static void Melt(double4F snow, doubleF illumination, doubleF height, double step, ref Parameters P)
-            => new MeltJob(snow, illumination, height, step, ref P)
+        public static void MeltSimple(double4F snow, doubleF illumination, doubleF height, double step, ref Parameters P)
+            => new MeltSimpleJob(snow, illumination, height, step, ref P)
                 .Run(snow.Length);
 
-        public static JobHandle Melt(double4F snow, doubleF illumination, doubleF height, double step, ref Parameters P, JobHandle dependsOn)
-            => new MeltJob(snow, illumination, height, step, ref P)
+        public static JobHandle MeltSimple(double4F snow, doubleF illumination, doubleF height, double step, ref Parameters P, JobHandle dependsOn)
+            => new MeltSimpleJob(snow, illumination, height, step, ref P)
                 .ScheduleParallel(snow.Length, 256, dependsOn);
         
         [BurstCompile]
-        private struct MeltJob : IJobFor
+        private struct MeltSimpleJob : IJobFor
         {
             [NativeDisableParallelForRestriction] double4F snowF;
             [ReadOnly] doubleF illumination, heightF;
             private double step, tempBase, meltRate, meltTemp, meltCompactionEffect;
-            private double stabStableTemp, stabUnstableTemp, stabFreezeTemp, stabHot, stabMedium, stabFreeze,
-                stabCompactionPressure, stabMinSlope, unstableFactor, tempIncAltitude, tempIncIllum, cloudCover, volFactor;
+            private double tempIncAltitude, tempIncIllum, cloudCover, volFactor;
 
-            public MeltJob(double4F snowF, doubleF illumination, doubleF heightF, double step, ref Parameters P)
+            public MeltSimpleJob(double4F snowF, doubleF illumination, doubleF heightF, double step, ref Parameters P)
             {
                 this.snowF = snowF;
                 this.illumination = illumination;
@@ -199,16 +198,7 @@ namespace TFM.Simulation
                 tempBase = P.TempBase;
                 meltRate = P.MeltRate;
                 meltTemp = P.MeltTemp;
-                stabStableTemp = P.StabilityStableTemp;
-                stabUnstableTemp = P.StabilityUnstableTemp;
-                stabFreezeTemp = P.StabilityFreezeTemp;
-                stabHot = P.StabilityHot;
-                stabMedium = P.StabilityMedium;
-                stabFreeze = P.StabilityFreeze;
-                stabCompactionPressure = P.StabilityCompactionPressure;
                 meltCompactionEffect = 0;
-                stabMinSlope = P.StabilityMinSlope;
-                unstableFactor = P.SnowfallUnstableRatio;
                 tempIncAltitude = P.TemperatureIncreasePerMetre;
                 tempIncIllum = P.TemperatureIncreasePerSunlight;
                 cloudCover = P.CloudCover;
@@ -220,6 +210,119 @@ namespace TFM.Simulation
                 var snow = snowF[index];
                 var cellHeight = heightF[index] + csum(snow);
                 var temperature = tempBase + illumination[index] * tempIncIllum * (1 - cloudCover) + cellHeight * tempIncAltitude;
+                
+                // Melting
+                var melt = -step * meltRate * max(0, temperature - meltTemp) / max(1, volFactor * csum(snow));
+
+                snow.w += melt; // powder
+                snow.z += min(0, snow.w); // unstable
+                snow.y += min(0, snow.z); // stable
+                snow.x += min(0, snow.y);
+                snow = select(snow, 0, snow < 0.001);
+
+                snowF[index] = snow;
+            }
+        }
+        
+        public static void Melt(double4F snow, doubleF illumination, doubleF height, double step, ref Parameters P)
+            => new MeltJob(snow, illumination, height, step, ref P)
+                .Run(snow.Length);
+
+        public static JobHandle Melt(double4F snow, doubleF illumination, doubleF height, double step, ref Parameters P, JobHandle dependsOn)
+            => new MeltJob(snow, illumination, height, step, ref P)
+                .ScheduleParallel(snow.Length, 256, dependsOn);
+
+        private struct MeltJob : IJobFor
+        {
+            private double4F snow;
+            private doubleF illumination;
+            private doubleF height;
+            private double step;
+            private double tempBase, tempIncAltitude;
+            private double sunIntensity, cloudFiltering, albedo;
+            private double heatCapacity, latentHeat, conductivity;
+
+            public MeltJob(double4F snow, doubleF illumination, doubleF height, double step, ref Parameters P)
+            {
+                this.snow = snow;
+                this.illumination = illumination;
+                this.height = height;
+                this.step = step * 3600 * 24;
+                tempBase = P.TempBase;
+                tempIncAltitude = P.TemperatureIncreasePerMetre;
+                cloudFiltering = 0.8 - 0.5 * P.CloudCover;
+                // Constants:
+                albedo = 0.1;
+                sunIntensity = 1367;
+                heatCapacity = 2090 * 110;
+                latentHeat = 333100 * 110;
+                conductivity = 0.05;
+            }
+            
+            public void Execute(int index)
+            {
+                // We assume snow temperature is air temperature if below 0 or 0 if above.
+                var s = snow[index];
+                var airTemp = tempBase + (height[index] + csum(s)) * tempIncAltitude;
+                var airConduction = conductivity * max(airTemp, 0);
+                var neededRadiation = max(airTemp, 0) * csum(s) * heatCapacity;
+                var solarRadiation = sunIntensity * illumination[index] * cloudFiltering * albedo;
+                var totalRadiation = solarRadiation + airConduction - neededRadiation;
+                var meltRate = totalRadiation / (latentHeat * vec.area(snow.cellSize));
+                
+                var melt = -step * meltRate;
+                //var compaction = select(snow.x / stable, 0, stable < 0.0001);
+                s.w += melt; // powder
+                s.z += min(0, s.w); // unstable
+                s.y += min(0, s.z); // stable
+                s.x += min(0, s.y);
+                s = select(s, 0, s < 0.001);
+                snow[index] = s;
+            }
+        }
+        
+        #endregion
+
+
+        #region Stability
+        
+        public static JobHandle Stability(double4F snow, doubleF illumination, doubleF height, double step, ref Parameters P, JobHandle dependsOn)
+            => new StabilityJob(snow, illumination, height, step, ref P)
+                .ScheduleParallel(snow.Length, 256, dependsOn);
+
+        private struct StabilityJob : IJobFor
+        {
+            [NativeDisableParallelForRestriction] double4F snowF;
+            [ReadOnly] doubleF illumination, heightF;
+            private double tempBase, step;
+            private double stabStableTemp, stabUnstableTemp, stabFreezeTemp, stabHot, stabMedium, stabFreeze,
+                stabCompactionPressure, stabMinSlope, unstableFactor, tempIncAltitude, tempIncIllum, cloudCover;
+
+            public StabilityJob(double4F snow, doubleF illumination, doubleF height, double step, ref Parameters P)
+            {
+                this.step = step;
+                snowF = snow;
+                this.illumination = illumination;
+                heightF = height;
+                tempBase = P.TempBase;
+                stabStableTemp = P.StabilityStableTemp;
+                stabUnstableTemp = P.StabilityUnstableTemp;
+                stabFreezeTemp = P.StabilityFreezeTemp;
+                stabHot = P.StabilityHot;
+                stabMedium = P.StabilityMedium;
+                stabFreeze = P.StabilityFreeze;
+                stabCompactionPressure = P.StabilityCompactionPressure;
+                stabMinSlope = P.StabilityMinSlope;
+                unstableFactor = P.SnowfallUnstableRatio;
+                tempIncAltitude = P.TemperatureIncreasePerMetre;
+                tempIncIllum = P.TemperatureIncreasePerSunlight;
+                cloudCover = 0.8 - 0.5 * P.CloudCover;
+            }
+            
+            public void Execute(int index)
+            {
+                var snow = snowF[index];
+                var temperature = tempBase + illumination[index] * tempIncIllum * cloudCover + (heightF[index] + csum(snow)) * tempIncAltitude;
                 var pressure = csum(snow.yzw);
                 var slope = cmax(field.slope(heightF, snowF, index));
                 slope = max(0, slope - stabMinSlope) * unstableFactor;
@@ -241,16 +344,6 @@ namespace TFM.Simulation
                     stability *= slope;
                 else if (slope > 1)
                     stability /= slope;
-
-                // Melting
-                var melt = -step * meltRate * max(0, temperature - meltTemp) / max(1, volFactor * csum(snow));
-                var stable = csum(snow.xy);
-                //var compaction = select(snow.x / stable, 0, stable < 0.0001);
-                snow.w += melt; // powder
-                snow.z += min(0, snow.w); // unstable
-                snow.y += min(0, snow.z); // stable
-                snow.x += min(0, snow.y);
-                snow = select(snow, 0, snow < 0.001);
                 
                 // Stability
                 
@@ -266,9 +359,9 @@ namespace TFM.Simulation
                 snowF[index] = snow;
             }
         }
-        
-        #endregion
 
+        #endregion
+        
         
         #region Diffusion
         
