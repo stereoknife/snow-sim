@@ -1,32 +1,24 @@
-using System;
 using System.Collections;
 using System.IO;
 using EasyButtons;
 using HPML;
-using HPML.Serialization;
-using TFM.Components.Solvers;
+using TFM.Solvers;
 using TFM.Components.Visualization;
+using TFM.Simulation;
 using Unity.Collections;
 using UnityEngine;
 using static Unity.Mathematics.math;
-using TFM.Simulation;
 using TFM.SnowSimulation.Data;
-using TFM.Utils;
-using Unity.Collections.LowLevel.Unsafe;
-using Unity.Jobs;
 using Unity.Mathematics;
-using Unity.Serialization.Binary;
 using noise = Unity.Mathematics.noise;
-using Terrain = TFM.Simulation.Terrain;
 
 namespace TFM.Components
 {
     public class SimulationController : MonoBehaviour, IRenderTerrain
     {
-        [SerializeField] private SnowSimulation.Data.SimulationTerrain terrain;
+        [SerializeField] private SimulationTerrain terrain;
         [SerializeField] private SimulationParameters parameters;
         [SerializeField] private double4 initialSnowValue;
-        [SerializeField] private bool forceGeneration = false;
         [Header("Events")]
         [SerializeField] private bool snowfall;
         [SerializeField] private bool windTransport;
@@ -46,44 +38,26 @@ namespace TFM.Components
         [SerializeField][Min(1)] private int bufferSize;
         [Header("Run parameters")]
         [SerializeField] private int frames;
-        [SerializeField] private float time;
+        [SerializeField] protected float time;
 
-        [SerializeField] private Material material;
-        [SerializeField] private bool drawWindMesh;
-        private Mesh _windMesh;
-        private RenderParams _rp;
-        private Matrix4x4 _mat;
-        
-        // Cached
-        private doubleF _height;
-        private doubleF _illumination;
-        private double2F _wind;
-        private ScalarField2D _windAltitude;
-        private ScalarField2D _terrainEffect;
-        
-        // Uncached
-        private double4F _snow;
-        private doubleF _hazard;
-        private NativeArray<double> _flow;
-        private NativeArray<bool> _moving;
-
-        private NativeArray<double> _tempTimeline;
-        private NativeArray<double> _cloudTimeline;
-        private NativeArray<double> _windTimeline;
-        private NativeArray<double> _precipTimeline;
+        private NativeList<double> _tempTimeline;
+        private NativeList<double> _cloudTimeline;
+        private NativeList<double> _windTimeline;
+        private NativeList<double> _precipTimeline;
 
         private NativeHashSet<int> _selectedPoints, _highlightedPoints;
 
-        public doubleF Heightfield => _height;
-        public double4F Snowfield => _snow;
+        public doubleF Heightfield => _simulation.Height;
+        public double4F Snowfield => _simulation.SnowLayers;
         public NativeHashSet<int> SelectedPoints => _selectedPoints;
         public NativeHashSet<int> HighlightedPoints => _highlightedPoints;
-        public ScalarField2D WindAltitude => _windAltitude;
+        public ScalarField2D WindAltitude => _simulation.WindAltitude;
 
-        private StochasticSimulation _simulation;
+        protected StochasticSimulation _simulation;
         private bool runSim = false;
 
         private TerrainMeshRenderer _renderer;
+        protected int minDay;
 
         [Button]
         private void StartSimulation()
@@ -116,11 +90,12 @@ namespace TFM.Components
         }
 
         [Button]
-        private void Reset()
+        protected void Reset()
         {
-            for (int i = 0; i < _snow.Length; i++)
+            var snow = Snowfield;
+            for (int i = 0; i < snow.Length; i++)
             {
-                _snow[i] = initialSnowValue;
+                snow[i] = initialSnowValue;
             }
             _simulation.Reset();
         }
@@ -180,28 +155,86 @@ namespace TFM.Components
         public void HighlightPoint(int index, bool clearHighlights = true)
         {
             if (clearHighlights) _highlightedPoints.Clear();
-            if (0 <= index && index < _height.Length) _highlightedPoints.Add(index);
+            if (0 <= index && index < Heightfield.Length) _highlightedPoints.Add(index);
         }
         
         public void SelectPoint(int index, bool clearSelection = true)
         {
             if (clearSelection) _selectedPoints.Clear();
-            if (0 <= index && index < _height.Length) _selectedPoints.Add(index);
+            if (0 <= index && index < Heightfield.Length) _selectedPoints.Add(index);
         }
 
+        private void Awake()
+        {
+            _renderer = GetComponent<TerrainMeshRenderer>();
+            
+            _selectedPoints = new NativeHashSet<int>(10, Allocator.Persistent);
+            _highlightedPoints = new NativeHashSet<int>(10, Allocator.Persistent);
+
+            _simulation = new StochasticSimulation
+            {
+                UseCloudTimeline = cloudCoverTimeline,
+                UsePrecipTimeline = precipitationTimeline,
+                UseTempTimeline = temperatureTimeline,
+                UseWindTimeline = windTimeline,
+                Enabled =
+                {
+                    [StochasticSimulation.EventId.MeltStep] = melting,
+                    [StochasticSimulation.EventId.TransportStep] = windTransport,
+                    [StochasticSimulation.EventId.DiffusionStep] = powderDiffusion,
+                    [StochasticSimulation.EventId.SnowfallStep] = snowfall,
+                    [StochasticSimulation.EventId.SnowfallStart] = snowfall,
+                    [StochasticSimulation.EventId.SnowfallEnd] = snowfall,
+                    [StochasticSimulation.EventId.AvalancheStart] = avalanche,
+                    [StochasticSimulation.EventId.AvalancheStep] = avalanche,
+                    [StochasticSimulation.EventId.StabilityStep] = stability
+                },
+                UseSimpleMelt = simpleMelt
+            };
+            
+            _simulation.Init(terrain, parameters);
+            
+            _tempTimeline = _simulation.TempTimeline;
+            _cloudTimeline = _simulation.CloudTimeline;
+            _windTimeline = _simulation.WindTimeline;
+            _precipTimeline = _simulation.PrecipTimeline;
+            
+            var startDay = parameters.LightingParameters.DirectStartingDay;
+            var endDay = parameters.LightingParameters.DirectEndDay;
+            if (startDay > endDay) endDay += 365;
+            var tlLength = endDay - startDay;
+            
+            _tempTimeline.ResizeUninitialized(tlLength);
+            _cloudTimeline.ResizeUninitialized(tlLength);
+            _windTimeline.ResizeUninitialized(tlLength);
+            _precipTimeline.ResizeUninitialized(tlLength);
+
+            time = tlLength;
+            
+            GenerateTemperatureTimeline();
+            GenerateCloudPrecipTimelines();
+            GenerateWindTimeline();
+
+            if (enableProfiling)
+                _simulation.EnableProfiling(bufferSize);
+            else
+                _simulation.DisableProfiling();
+        }
+        
         private void SetSimulationParams()
         {
-            _simulation.SetEventEnabled(StochasticSimulation.EventId.MeltStep, melting);
-            _simulation.SetEventEnabled(StochasticSimulation.EventId.TransportStep, windTransport);
-            _simulation.SetEventEnabled(StochasticSimulation.EventId.DiffusionStep, powderDiffusion);
-            _simulation.SetEventEnabled(StochasticSimulation.EventId.SnowfallStep, snowfall);
-            _simulation.SetEventEnabled(StochasticSimulation.EventId.SnowfallStart, snowfall);
-            _simulation.SetEventEnabled(StochasticSimulation.EventId.SnowfallEnd, snowfall);
-            _simulation.SetEventEnabled(StochasticSimulation.EventId.AvalancheStart, avalanche);
-            _simulation.SetEventEnabled(StochasticSimulation.EventId.AvalancheStep, avalanche);
-            _simulation.SetEventEnabled(StochasticSimulation.EventId.StabilityStep, stability);
-
-            _simulation.UseSimpleMelt = simpleMelt;
+            _simulation.Enabled[StochasticSimulation.EventId.MeltStep] = melting;
+            _simulation.Enabled[StochasticSimulation.EventId.TransportStep] = windTransport;
+            _simulation.Enabled[StochasticSimulation.EventId.DiffusionStep] = powderDiffusion;
+            _simulation.Enabled[StochasticSimulation.EventId.SnowfallStep] = snowfall;
+            _simulation.Enabled[StochasticSimulation.EventId.SnowfallStart] = snowfall;
+            _simulation.Enabled[StochasticSimulation.EventId.SnowfallEnd] = snowfall;
+            _simulation.Enabled[StochasticSimulation.EventId.AvalancheStart] = avalanche;
+            _simulation.Enabled[StochasticSimulation.EventId.AvalancheStep] = avalanche;
+            _simulation.UseCloudTimeline = cloudCoverTimeline;
+            _simulation.UsePrecipTimeline = precipitationTimeline;
+            _simulation.UseTempTimeline = temperatureTimeline;
+            _simulation.UseWindTimeline = windTimeline;
             
             if (enableProfiling)
                 _simulation.EnableProfiling(bufferSize);
@@ -212,118 +245,6 @@ namespace TFM.Components
         private void OnValidate()
         {
             if (_simulation != null) SetSimulationParams();
-        }
-
-        private void Awake()
-        {
-            _renderer = GetComponent<TerrainMeshRenderer>();
-            
-            InitializeSimulation();
-
-            _windMesh = new Mesh
-            {
-                name = "Wind mesh"
-            };
-            _rp = new RenderParams(material)
-            {
-                matProps = new MaterialPropertyBlock()
-            };
-            _rp.matProps.SetColor("BaseColor", Color.cyan);
-
-            _windAltitude.Layer(_windAltitude.layers - 1).GenerateMesh(out var mda, default).Complete();
-            Mesh.ApplyAndDisposeWritableMeshData(mda, _windMesh);
-            _windMesh.RecalculateBounds();
-            _mat = Matrix4x4.Scale(new Vector3(0.01f, 0.01f, 0.01f));
-        }
-
-        private void Update()
-        {
-            if (drawWindMesh)
-                Graphics.RenderMesh(_rp, _windMesh, 0, _mat, _mat);
-        }
-
-        private void InitializeSimulation()
-        {
-            BinarySerialization.AddGlobalAdapter(new doubleFAdapter(Allocator.Persistent));
-            BinarySerialization.AddGlobalAdapter(new double2FAdapter(Allocator.Persistent));
-            BinarySerialization.AddGlobalAdapter(new ScalarField2DAdapter(Allocator.Persistent));
-            _height = doubleF.FromTexture(terrain.heightmap, terrain.size, Allocator.Persistent);
-            _snow = new double4F(_height, Allocator.Persistent, initialSnowValue);
-            _hazard = new doubleF(_height, Allocator.Persistent);
-            _flow = new NativeArray<double>(_height.Length * 4 * 2, Allocator.Persistent);
-            _moving = new NativeArray<bool>(_height.Length, Allocator.Persistent);
-
-            var success = (false, false);
-            if (!forceGeneration) success = TryLoadCacheData();
-            Debug.Log($"Successfully loaded from cache: {success}");
-            
-            var lh = new JobHandle();
-            var wh = new JobHandle();
-            if (!success.Item1)
-                lh = GenerateLightingData(lh);
-            if (!success.Item2)
-                wh = GenerateWindData(wh);
-
-            lh = _renderer.AddTexture(TerrainMeshRenderer.TextureId.CombinedIllumination, _illumination, lh);
-
-            var hh = GenerateHazardData(default);
-            JobHandle.CombineDependencies(lh, wh, hh).Complete();
-
-            var hdf = new doubleF(_hazard, Allocator.TempJob);
-            hdf[0] = _hazard[0];
-            for (int i = 1; i < _hazard.Length; i++)
-            {
-                hdf[i] = _hazard[i]-_hazard[i-1];
-                
-                if (isnan(_hazard[i]) && !isnan(_hazard[i-1])) Debug.Log($"{_hazard[i]}, {_hazard[i-1]}");
-            }
-            
-            _renderer.AddTexture(TerrainMeshRenderer.TextureId.AvalancheHazard, hdf);
-            hdf.Dispose();
-            SaveCacheData();
-            
-            _renderer.Apply();
-            
-            var startDay = parameters.LightingParameters.DirectStartingDay;
-            var endDay = parameters.LightingParameters.DirectEndDay;
-            if (startDay > endDay) endDay += 365;
-            var tlLength = endDay - startDay;
-            _tempTimeline = new NativeArray<double>(tlLength, Allocator.Persistent);
-            _cloudTimeline = new NativeArray<double>(tlLength, Allocator.Persistent);
-            _windTimeline = new NativeArray<double>(tlLength, Allocator.Persistent);
-            _precipTimeline = new NativeArray<double>(tlLength, Allocator.Persistent);
-            _selectedPoints = new NativeHashSet<int>(10, Allocator.Persistent);
-            _highlightedPoints = new NativeHashSet<int>(10, Allocator.Persistent);
-            time = tlLength;
-            
-            GenerateTemperatureTimeline();
-            GenerateCloudPrecipTimelines();
-            GenerateWindTimeline();
-            
-            _simulation = new StochasticSimulation(1337)
-            {
-                SnowLayers = _snow,
-                Height = _height,
-                Temperature = _illumination,
-                WindDirection = _wind,
-                WindAltitude = _windAltitude,
-                WindTerrain = _terrainEffect,
-                Flow = _flow,
-                Moving = _moving,
-                Hazard = _hazard,
-                TempTimeline = _tempTimeline,
-                CloudTimeline = _cloudTimeline,
-                PrecipTimeline = _precipTimeline,
-                WindTimeline = _windTimeline,
-                Parameters = Snow.Parameters.Default,
-            };
-            
-            _simulation.SetUseCloudTimeline(cloudCoverTimeline);
-            _simulation.SetUsePrecipTimeline(precipitationTimeline);
-            _simulation.SetUseTempTimeline(temperatureTimeline);
-            _simulation.SetUseWindTimeline(windTimeline);
-            
-            SetSimulationParams();
         }
 
         private void GenerateTemperatureTimeline()
@@ -339,7 +260,7 @@ namespace TFM.Components
             var d = (maxTemp + minTemp) / 2f;
 
             var startDay = parameters.LightingParameters.DirectStartingDay;
-            var minDay = 0;
+            minDay = 0;
             for (int i = 0; i < _tempTimeline.Length; i++)
             {
                 _tempTimeline[i] = a * sin(b * (i + startDay - c) - PI * 5f/8f) + d;
@@ -366,208 +287,25 @@ namespace TFM.Components
                 _windTimeline[i] = 8f;//(noise.cnoise(float2(i / 2f, -20f)) + 1f) / 2f * maxWindSpeed;
             }
         }
-
-        private unsafe (bool, bool) TryLoadCacheData()
-        {
-            Debug.Log("Trying to load cache");
-            
-            var lightHash = xxHash3.Hash64(parameters.LightingParameters);
-            var windHash = xxHash3.Hash64(parameters.WindParameters);
-
-            var lightLoaded = false;
-            var windLoaded = false;
-            
-            var path = Path.Combine(Application.dataPath, "cache", $"{terrain.name}.{lightHash.x:x}{lightHash.y:x}.bytes");
-            if (File.Exists(path))
-            {
-                var file = File.ReadAllBytes(path);
-                fixed (byte* bytes = file)
-                {
-                    var buffer = new UnsafeAppendBuffer(bytes, file.Length);
-                    buffer.Length = buffer.Capacity;
-                    var reader = buffer.AsReader();
-                    
-                    Debug.Log("Loading temp");
-                    _illumination = BinarySerialization.FromBinary<doubleF>(&reader);
-                }
-
-                lightLoaded = true;
-            }
-            
-            path = Path.Combine(Application.dataPath, "cache", $"{terrain.name}.{windHash.x:x}{windHash.y:x}.bytes");
-            if (File.Exists(path))
-            {
-                var file = File.ReadAllBytes(path);
-                fixed (byte* bytes = file)
-                {
-                    var buffer = new UnsafeAppendBuffer(bytes, file.Length);
-                    buffer.Length = buffer.Capacity;
-                    var reader = buffer.AsReader();
-                    
-                    Debug.Log("Loading wind");
-                    _wind = BinarySerialization.FromBinary<double2F>(&reader);
-                    Debug.Log("Loading altitude");
-                    _windAltitude = BinarySerialization.FromBinary<ScalarField2D>(&reader);
-                    Debug.Log("Loading terrain effect");
-                    _terrainEffect = BinarySerialization.FromBinary<ScalarField2D>(&reader);
-                }
-
-                windLoaded = true;
-            }
-
-            return (lightLoaded, windLoaded);
-        }
-
-        private unsafe void SaveCacheData()
-        {
-            var lightHash = xxHash3.Hash64(parameters.LightingParameters);
-            var windHash = xxHash3.Hash64(parameters.WindParameters);
-
-            var capacity = max(
-                doubleFAdapter.SizeOf(_illumination)
-                , double2FAdapter.SizeOf(_wind)
-                  + ScalarField2DAdapter.SizeOf(_windAltitude)
-                  + ScalarField2DAdapter.SizeOf(_terrainEffect)
-            );
-                
-            var buffer = new UnsafeAppendBuffer(capacity, 4, Allocator.Temp);
-                
-            BinarySerialization.ToBinary(&buffer, _illumination);
-
-            var path = Path.Combine(Application.dataPath, "cache", $"{terrain.name}.{lightHash.x:x}{lightHash.y:x}.bytes");
-            new FileInfo(path).Directory?.Create();
-            using (var writer = new BinaryWriter(File.Open(path, FileMode.Create)))
-            {
-                writer.Write(new ReadOnlySpan<byte>(buffer.Ptr, buffer.Length));
-            }
-            
-            buffer.Reset();
-            
-            BinarySerialization.ToBinary(&buffer, _wind);
-            BinarySerialization.ToBinary(&buffer, _windAltitude);
-            BinarySerialization.ToBinary(&buffer, _terrainEffect);
-            
-            path = Path.Combine(Application.dataPath, "cache", $"{terrain.name}.{windHash.x:x}{windHash.y:x}.bytes");
-            new FileInfo(path).Directory?.Create();
-            using (var writer = new BinaryWriter(File.Open(path, FileMode.Create)))
-            {
-                writer.Write(new ReadOnlySpan<byte>(buffer.Ptr, buffer.Length));
-            }
-            
-            buffer.Dispose();
-        }
         
-        private JobHandle GenerateLightingData(JobHandle dependsOn)
-        {
-            if (!_height.IsCreated)
-                _height = doubleF.FromTexture(terrain.heightmap, terrain.size, Allocator.Persistent);
-            if (!_illumination.IsCreated)
-                _illumination = new doubleF(_height, Allocator.Persistent);
-            
-            var lightParams = parameters.LightingParameters;
-            var dlf = new doubleF(_height, Allocator.TempJob);
-            var ilf = new doubleF(_height, Allocator.TempJob);
-            var alf = new doubleF(_height, Allocator.TempJob);
-
-            _renderer.AddTexture(TerrainMeshRenderer.TextureId.Height, _height);
-            
-            var dlh = Lighting.DirectLighting(_height, dlf, ref lightParams, dependsOn);
-            var ilh = Lighting.IndirectLighting(_height, dlf, ilf, ref lightParams, dlh);
-            var alh = Lighting.AmbientLighting(_height, alf, dependsOn);
-
-            dlh = _renderer.AddTexture(TerrainMeshRenderer.TextureId.DirectIllumination, dlf, dlh);
-            ilh = _renderer.AddTexture(TerrainMeshRenderer.TextureId.IndirectIllumination, ilf, ilh);
-            alh = _renderer.AddTexture(TerrainMeshRenderer.TextureId.AmbientIllumination, alf, alh);
-
-            var clh = JobHandle.CombineDependencies(dlh, ilh, alh);
-            clh = Lighting.TemperatureParallel(_illumination, dlf, alf, ilf, _height, ref lightParams, clh);
-            
-            dlh = dlf.Dispose(clh);
-            ilh = ilf.Dispose(clh);
-            alh = alf.Dispose(clh);
-            
-            return JobHandle.CombineDependencies(dlh, ilh, alh);
-        }
-        
-        private JobHandle GenerateWindData(JobHandle dependsOn)
-        {
-            var windParams = parameters.WindParameters;
-            if (!_height.IsCreated)
-                _height = doubleF.FromTexture(terrain.heightmap, terrain.size, Allocator.Persistent);
-            if (!_wind.IsCreated)
-                _wind = new double2F(_height, Allocator.Persistent, normalize(double2(1, -1)));
-            if (!_windAltitude.IsCreated)
-                _windAltitude = new (_height.dimension, windParams.SurfaceSamples, _height.size.xz, Allocator.Persistent);
-            if (!_terrainEffect.IsCreated)
-                _terrainEffect = new(_windAltitude, Allocator.Persistent);
-            
-            var wsf = new doubleF(_height, Allocator.TempJob);
-            
-            dependsOn = Wind.VenturiParallel(_wind, _height, ref windParams, dependsOn);
-            dependsOn = Wind.TerrainDeflectionParallel(_wind, _height, ref windParams, dependsOn);
-            dependsOn = Wind.WindEffectSurface(_wind, wsf, _height, _windAltitude,  _terrainEffect, ref windParams, dependsOn);
-            dependsOn = wsf.Dispose(dependsOn);
-            
-            return dependsOn;
-        }
-
-        private JobHandle GenerateHazardData(JobHandle dependsOn)
-        {
-            var rf = new doubleF(_height, Allocator.TempJob);
-            var gf = new doubleF(_height, Allocator.TempJob);
-            var cf = new NativeArray<int>(_height.Length, Allocator.TempJob);
-            
-            var rh = Terrain.Roughness(_height, rf, dependsOn);
-            var gh = Terrain.Gradient(_height, gf, dependsOn);
-            var ch = Terrain.Curvature(_height, cf, dependsOn);
-
-            rh = _renderer.AddTexture(TerrainMeshRenderer.TextureId.TerrainRoughness, rf, rh);
-            gh = _renderer.AddTexture(TerrainMeshRenderer.TextureId.TerrainGradient, gf, gh);
-            ch = _renderer.AddTexture(TerrainMeshRenderer.TextureId.TerrainCurvatureCategory, _height, cf, ch);
-
-            rh = Terrain.RoughnessDist(rf, rh);
-            gh = Terrain.GradientDist(gf, gh);
-            
-            rh = _renderer.AddTexture(TerrainMeshRenderer.TextureId.RoughnessHazard, rf, rh);
-            gh = _renderer.AddTexture(TerrainMeshRenderer.TextureId.GradientHazard, gf, gh);
-            
-            var hh = JobHandle.CombineDependencies(rh, gh, ch);
-            hh = Terrain.Hazard(_hazard, gf, rf, cf, hh);
-            
-            return hh;
-        }
 
         private void OnGUI()
         {
             var t = _simulation.simulationTime;
-            var p = (int)floor(t);
-            var n = min((int)ceil(t), _cloudTimeline.Length - 1);
-            var f = frac(t);
             var style = new GUIStyle { fontSize = 20 };
             GUILayout.Label($"Simulation time: {t}", style);
-            GUILayout.Label($"Temperature: {lerp(_tempTimeline[p], _tempTimeline[n], f)}", style);
-            GUILayout.Label($"Cloud cover: {lerp(_cloudTimeline[p], _cloudTimeline[n], f)}", style);
-            GUILayout.Label($"Precipitation: {lerp(_precipTimeline[p], _precipTimeline[n], f)}", style);
-            GUILayout.Label($"Wind speed: {lerp(_windTimeline[p], _windTimeline[n], f)}", style);
+            GUILayout.Label($"Temperature: {_simulation.Parameters.TempBase}", style);
+            GUILayout.Label($"Cloud cover: {_simulation.Parameters.CloudCover}", style);
+            GUILayout.Label($"Precipitation: {_simulation.Parameters.SnowfallIntensity * _simulation.Parameters.SnowfallStrength}", style);
+            GUILayout.Label($"Wind speed: {_simulation.Parameters.WindSpeed}", style);
         }
 
         private void OnDestroy()
         {
             runSim = false;
-            _height.Dispose();
-            _illumination.Dispose();
-            _wind.Dispose();
-            _windAltitude.Dispose();
-            _terrainEffect.Dispose();
-            _snow.Dispose();
-            _flow.Dispose();
-            _tempTimeline.Dispose();
-            _cloudTimeline.Dispose();
-            _windTimeline.Dispose();
-            _precipTimeline.Dispose();
-            _hazard.Dispose();
             _selectedPoints.Dispose();
             _highlightedPoints.Dispose();
+            _simulation.Dispose();
         }
     }
 }

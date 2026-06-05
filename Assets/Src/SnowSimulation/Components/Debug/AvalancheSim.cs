@@ -4,10 +4,12 @@ using EasyButtons;
 using HPML;
 using TFM.Components.Visualization;
 using TFM.Simulation;
+using TFM.SnowSimulation.Data;
 using Unity.Collections;
 using Unity.Jobs.LowLevel.Unsafe;
 using Unity.Mathematics;
 using UnityEngine;
+using UnityEngine.Serialization;
 using static Unity.Mathematics.math;
 
 namespace TFM.Components
@@ -17,8 +19,7 @@ namespace TFM.Components
         [SerializeField] private float simSpeed = 1;
         [SerializeField] private double4 startingSnow = new (0 , 0, 1, 0);
         [SerializeField] private int2 rupturePoint = new (249, 243);
-        
-        private SimulationTerrain _simulationTerrain;
+        [SerializeField] private SimulationTerrain simulationTerrain;
 
         private doubleF _height;
         private double4F _snow;
@@ -37,7 +38,7 @@ namespace TFM.Components
         private void Awake()
         {
             var terrain = GetComponent<SimulationTerrain>();
-            var terrainSize = terrain.size * terrain.units;
+            var terrainSize = terrain.size;
             _height = doubleF.FromTexture(terrain.heightmap, terrainSize, Allocator.Persistent);
             _snow = new double4F(_height, Allocator.Persistent, startingSnow);
             _flow = new NativeArray<double>(_height.Length * 9, Allocator.Persistent);

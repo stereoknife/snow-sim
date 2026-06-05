@@ -1,3 +1,4 @@
+using System;
 using System.Runtime.CompilerServices;
 using HPML;
 using TFM.Utils;
@@ -61,10 +62,10 @@ namespace TFM.Simulation
             public double TemperatureIncreasePerSunlight;
             
             // Weather
-            public double TempBase;                 // °C
-            public double WindSpeed;
-            public double CloudCover;
-            public double SnowfallIntensity;
+            [HideInInspector] public double TempBase;                 // °C
+            [HideInInspector] public double WindSpeed;
+            [HideInInspector] public double CloudCover;
+            [HideInInspector] public double SnowfallIntensity;
 
             public static Parameters Default => new()
             {
@@ -201,7 +202,7 @@ namespace TFM.Simulation
                 meltCompactionEffect = 0;
                 tempIncAltitude = P.TemperatureIncreasePerMetre;
                 tempIncIllum = P.TemperatureIncreasePerSunlight;
-                cloudCover = P.CloudCover;
+                cloudCover = 0.8 - 0.5 * P.CloudCover;
                 volFactor = P.MeltVolumeFactor;
             }
             
@@ -209,7 +210,9 @@ namespace TFM.Simulation
             {
                 var snow = snowF[index];
                 var cellHeight = heightF[index] + csum(snow);
-                var temperature = tempBase + illumination[index] * tempIncIllum * (1 - cloudCover) + cellHeight * tempIncAltitude;
+                
+                var airTemp = tempBase + cellHeight * tempIncAltitude;
+                var temperature = airTemp + illumination[index] * tempIncIllum * cloudCover;
                 
                 // Melting
                 var melt = -step * meltRate * max(0, temperature - meltTemp) / max(1, volFactor * csum(snow));
@@ -517,7 +520,7 @@ namespace TFM.Simulation
 
                 var windLayer = P.WindSpeed / P.WindSpeedPerLayer - 1;
                 lowLayerZero = windLayer < 0;
-                windLayer = clamp(windLayer, 0, windAltitude.layers);
+                windLayer = clamp(windLayer, 0, windAltitude.layers - 1);
                 windAltLow = lowLayerZero ? height : windAltitude.Layer((int)floor(windLayer));
                 windAltHigh = windAltitude.Layer((int)ceil(windLayer));
                 windTerrainLow = windTerrain.Layer((int)floor(windLayer));

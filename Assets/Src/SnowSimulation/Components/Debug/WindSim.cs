@@ -1,6 +1,7 @@
 using System;
 using HPML;
 using TFM.Simulation;
+using TFM.SnowSimulation.Data;
 using TFM.Utils;
 using Unity.Burst;
 using Unity.Collections;
@@ -15,6 +16,7 @@ namespace TFM.Components
 {
     public class WindSim : MonoBehaviour
     {
+        [SerializeField] private SimulationTerrain terrain;
         [SerializeField][Range(0, 360)] private double windHeading;
         [SerializeField] private double windSpeedAtBase;
 
@@ -54,8 +56,7 @@ namespace TFM.Components
             swm = new Mesh();
             swm.name = "Smooth Wind";
             
-            var terrain = GetComponent<SimulationTerrain>();
-            var scale = terrain.size * terrain.units;
+            var scale = terrain.size;
             _height = doubleF.FromTexture(terrain.heightmap, scale, Allocator.Persistent);
             var heading = double2(cos(radians(windHeading)), sin(radians(windHeading)));
             Debug.Log(heading);

@@ -9,28 +9,33 @@ namespace TFM.SnowSimulation.Data
     [CreateAssetMenu(fileName = "SimParameters", menuName = "Simulation Parameters", order = 0)]
     public class SimulationParameters : ScriptableObject
     {
+        [SerializeField] public float4 initialSnowValue = new (0);
+        [SerializeField] public bool loadFromCache = true;
+        [SerializeField] public string cacheLocation = "cache";
+        [SerializeField] public uint seed = 1337;
         [Header("Illumination")] 
-        [SerializeField] private double directIntensity = Lighting.Parameters.Default.IntensityDirect;
-        [SerializeField] private double ambientIntensity = Lighting.Parameters.Default.IntensityAmbient;
-        [SerializeField] private double indirectIntensity = Lighting.Parameters.Default.IntensityIndirect;
+        [SerializeField] public double directIntensity = Lighting.Parameters.Default.IntensityDirect;
+        [SerializeField] public double ambientIntensity = Lighting.Parameters.Default.IntensityAmbient;
+        [SerializeField] public double indirectIntensity = Lighting.Parameters.Default.IntensityIndirect;
 
-        [SerializeField] private float latitude = 45;
-        [SerializeField] private int2 fromDate = new (1, 1);
-        [SerializeField] private int2 toDate = new (31, 12);
-        [SerializeField][Range(1, 365)] private int daysBetweenSamples = Lighting.Parameters.Default.DirectDaysBetweenSamples;
-        [SerializeField][Range(1, 24)] private int hoursBetweenSamples = Lighting.Parameters.Default.DirectHoursBetweenSamples;
+        [SerializeField] public float latitude = 45;
+        [SerializeField] public int2 fromDate = new (1, 1);
+        [SerializeField] public int2 toDate = new (31, 12);
+        [SerializeField][Range(1, 365)] public int daysBetweenSamples = Lighting.Parameters.Default.DirectDaysBetweenSamples;
+        [SerializeField][Range(1, 24)] public int hoursBetweenSamples = Lighting.Parameters.Default.DirectHoursBetweenSamples;
         
-        [SerializeField][Range(1, 32)] private int angularSamples = Lighting.Parameters.Default.IndirectAngularSamples;
-        [SerializeField][Range(1, 50)] private int distanceSamples = Lighting.Parameters.Default.IndirectDistanceSamples;
-        [SerializeField][Range(1, 500)] private double maxDistance = Lighting.Parameters.Default.IndirectMaxDistance;
+        [SerializeField][Range(1, 32)] public int angularSamples = Lighting.Parameters.Default.IndirectAngularSamples;
+        [SerializeField][Range(1, 50)] public int distanceSamples = Lighting.Parameters.Default.IndirectDistanceSamples;
+        [SerializeField][Range(1, 500)] public double maxDistance = Lighting.Parameters.Default.IndirectMaxDistance;
 
         [Header("Wind")]
-        [SerializeField] private double venturiIntensity = Wind.Parameters.Default.VenturiIntensity;
-        [SerializeField] private double deflectionIntensity = Wind.Parameters.Default.DeflectionIntensity;
-        [SerializeField] private double surfaceFalloff = Wind.Parameters.Default.SurfaceFalloff;
-        [SerializeField] private int surfaceMaxIterations = Wind.Parameters.Default.SurfaceMaxIterations;
-        [SerializeField] private int surfaceSamples = Wind.Parameters.Default.SurfaceSamples;
-        [SerializeField] private double surfaceSpeedIncrement = Wind.Parameters.Default.SurfaceSpeedIncrement;
+        [SerializeField][Range(0, 359)] public double windHeading = 0;
+        [SerializeField] public double venturiIntensity = Wind.Parameters.Default.VenturiIntensity;
+        [SerializeField] public double deflectionIntensity = Wind.Parameters.Default.DeflectionIntensity;
+        [SerializeField] public double surfaceFalloff = Wind.Parameters.Default.SurfaceFalloff;
+        [SerializeField] public int surfaceMaxIterations = Wind.Parameters.Default.SurfaceMaxIterations;
+        [SerializeField] public int surfaceSamples = Wind.Parameters.Default.SurfaceSamples;
+        [SerializeField] public double surfaceSpeedIncrement = Wind.Parameters.Default.SurfaceSpeedIncrement;
 
         public Lighting.Parameters LightingParameters => new()
         {
@@ -51,6 +56,7 @@ namespace TFM.SnowSimulation.Data
         
         public Wind.Parameters WindParameters => new()
         {
+            WindDirection = new double2(math.cos(math.radians(windHeading)), math.sin(math.radians(windHeading))),
             VenturiIntensity = venturiIntensity,
             DeflectionIntensity = deflectionIntensity,
             SurfaceFalloff = surfaceFalloff,

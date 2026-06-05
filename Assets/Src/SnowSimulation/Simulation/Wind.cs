@@ -5,6 +5,7 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Jobs;
 using Unity.Mathematics;
+using UnityEngine;
 using static Unity.Mathematics.math;
 
 namespace TFM.Simulation
@@ -13,6 +14,7 @@ namespace TFM.Simulation
     {
         public struct Parameters
         {
+            public double2 WindDirection;
             public double VenturiIntensity;     // m^-1
             public double DeflectionIntensity;  //
             public double SurfaceFalloff;       // m/s^2
@@ -23,6 +25,7 @@ namespace TFM.Simulation
 
             public static Parameters Default => new()
             {
+                WindDirection = double2(1, 0),
                 VenturiIntensity = 0.001,
                 DeflectionIntensity = 0.5,
                 SurfaceFalloff = 0.7,

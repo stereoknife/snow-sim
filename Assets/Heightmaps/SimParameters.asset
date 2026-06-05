@@ -12,6 +12,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3050e33074cc4a26b85e06a225844cd6, type: 3}
   m_Name: SimParameters
   m_EditorClassIdentifier: SnowSimulation::TFM.SnowSimulation.Data.SimulationParameters
+  initialSnowValue:
+    x: 0
+    y: 0
+    z: 0
+    w: 0
+  loadFromCache: 1
+  cacheLocation: cache
+  seed: 1337
   directIntensity: 1
   ambientIntensity: 1
   indirectIntensity: 1
@@ -27,6 +35,7 @@ MonoBehaviour:
   angularSamples: 32
   distanceSamples: 50
   maxDistance: 50
+  windHeading: 320
   venturiIntensity: 0.001
   deflectionIntensity: 0.5
   surfaceFalloff: 0.7
