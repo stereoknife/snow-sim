@@ -207,8 +207,8 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 330585543}
   serializedVersion: 2
-  m_LocalRotation: {x: -0.1169796, y: -0.88165486, z: 0.29608932, w: -0.34832686}
-  m_LocalPosition: {x: 0.77, y: 21.68203, z: 47.91}
+  m_LocalRotation: {x: -0.0861182, y: -0.9126279, z: 0.3064912, w: -0.2564319}
+  m_LocalPosition: {x: 3.4, y: 20, z: 46.95}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -756,13 +756,15 @@ MonoBehaviour:
     x: 0
     y: 0
     z: 0
-    w: 1
+    w: 0
   forceGeneration: 0
-  snowfall: 0
+  snowfall: 1
   windTransport: 1
-  melting: 0
-  powderDiffusion: 0
+  melting: 1
+  stability: 1
+  powderDiffusion: 1
   avalanche: 0
+  simpleMelt: 0
   temperatureTimeline: 1
   precipitationTimeline: 0
   windTimeline: 0
