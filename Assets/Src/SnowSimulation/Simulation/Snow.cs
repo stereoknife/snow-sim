@@ -437,18 +437,20 @@ namespace TFM.Simulation
                 var dn = height.cellSize.yyxx;
 
                 var sd = (h - hn) / dn;
-                var mdpos = max(0, sd - diffRestSlope);
-                var mdneg = clamp(sd + diffRestSlope, 0, npow);
-                var md = select(mdpos, mdneg, sd < 0);
-                md *= step * diffRate;
+                var diffusion = select(
+                    max(0, sd - diffRestSlope), 
+                    min(0, sd + diffRestSlope), 
+                    sd < 0
+                );
+                diffusion *= step * diffRate;
 
-                var i = csum(min(0, md));
-                var o = csum(max(0, md));
+                var i = csum(min(0, diffusion));
+                var o = csum(max(0, diffusion));
                 var pow = snow[ij].w;
-                var smd = md * select(1, (i + pow) / o, o > i + pow);
-                md = select(smd, md, md < 0);
+                var scale = min(1, (abs(i) + pow) / o);
+                diffusion = select(diffusion, diffusion * scale, sd > 0);
                 
-                npow = max(0, npow + md);
+                npow = max(0, npow + diffusion);
                 du.w = npow.x;
                 dd.w = npow.y;
                 dl.w = npow.z;
@@ -460,7 +462,7 @@ namespace TFM.Simulation
                 snow[down.x, ij.y] = dr;
                 
                 var s = snow[index];
-                s.w -= min(csum(md), s.w);
+                s.w -= min(csum(diffusion), s.w);
                 snow[index] = s;
             }
         }
