@@ -1,4 +1,4 @@
-﻿%YAML 1.1
+%YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
 --- !u!29 &1
 OcclusionCullingSettings:
@@ -761,8 +761,10 @@ MonoBehaviour:
   snowfall: 1
   windTransport: 1
   melting: 1
+  stability: 0
   powderDiffusion: 1
   avalanche: 0
+  simpleMelt: 0
   temperatureTimeline: 1
   precipitationTimeline: 0
   windTimeline: 0
