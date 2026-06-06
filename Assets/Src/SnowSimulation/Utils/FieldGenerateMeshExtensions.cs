@@ -104,10 +104,11 @@ namespace TFM.Utils
             {
                 var ij = height.cell(index);
                 var xz = height.cellSize * ij;
-                var v = (float3)double3(xz, height[index]).xzy;
+                var snowAmt = csum(snow[index]);
+                var v = (float3)double3(xz, height[index] +snowAmt).xzy;
                 var n = (float3)field.normal(height, index);
                 var uv0 = (float2)height.cell(index) / (float2)(height.dimension - 1);
-                var uv1 = float2((float)csum(snow[index]));
+                var uv1 = float2((float)snowAmt);
                 vertices[index] = new vtx
                 {
                     position = v,
