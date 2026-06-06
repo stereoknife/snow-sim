@@ -278,29 +278,29 @@ namespace HPML
         }
         
         public static double2 gradient2(doubleF a, double4F b, int at) => gradient2(a, b, a.cell(at));
-        /*
+
         public static double2 gradient2(doubleF a, double4F b, int2 at)
         {
             int2 up   = min(at + 1, b.dimension - 1);
             int2 down = max(at - 1, 0);
             double h = a[at] + csum(b[at]);
             return new double2(
-                (a[up.x] + csum(b[up.x]) + a[down.x] + csum(b[up.x])) * 0.5 - h,
-                (a[up.y] + csum(b[up.x]) + a[down.y] + csum(b[up.y])) * 0.5 - h
-            ) * a.iCellSize * 0.667;
-        }
-        /*/
-        public static double2 gradient2(doubleF a, double4F b, int2 at)
-        {
-            int2 up   = min(at + 1, b.dimension - 1);
-            int2 down = max(at - 1, 0);
-            double h = a[at] + csum(b[at]);
-            return new double2(
-                a[up.x] + csum(b[up.x]) + a[down.x] + csum(b[up.x]) - 2*h,
-                a[up.y] + csum(b[up.x]) + a[down.y] + csum(b[up.y]) - 2*h
+                a[up.x, at.y] + csum(b[up.x, at.y]) + a[down.x, at.y] + csum(b[down.x, at.y]) - 2*h,
+                a[at.x, up.y] + csum(b[at.x, up.x]) + a[at.x, down.y] + csum(b[at.x, down.y]) - 2*h
             ) * a.iCellSize * a.iCellSize;
         }
-        //*/
+        
+        
+        public static double2 gradient2(doubleF a, doubleF b, double t, int2 at)
+        {
+            int2 up   = min(at + 1, b.dimension - 1);
+            int2 down = max(at - 1, 0);
+            double h = lerp(a[at], b[at], t);
+            return new double2(
+                lerp(a[up.x, at.y], b[up.x, at.y], t) + lerp(a[down.x, at.y], b[down.x, at.y], t) - 2*h,
+                lerp(a[at.x, up.y], b[at.x, up.y], t) + lerp(a[at.x, down.y], b[at.x, down.y], t) - 2*h
+            ) * a.iCellSize * a.iCellSize;
+        }
         
         public static double2 gradient(in doubleF a, in double4F b, int at) => gradient(in a, in b, a.cell(at));
         public static double2 gradient(in doubleF a, in double4F b, int2 at)
