@@ -82,7 +82,7 @@ namespace TFM.Components
         }
         
         [Button]
-        private void RunTime()
+        protected void RunTime()
         {
             runSim = true;
             //_simulation.Reset();

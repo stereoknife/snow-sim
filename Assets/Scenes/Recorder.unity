@@ -826,13 +826,13 @@ MonoBehaviour:
   frames: 0
   time: 0
   settings: {fileID: 2655988077585873504, guid: 3acbcddde4dbd7d478f920ea249526df, type: 2}
-  recordingName: VolFactor
+  recordingName: HeatSim
   values:
-  - 0
   - 1
-  - 10
-  - 50
-  - 100
+  - 1.33
+  - 2
+  - 4
+  - 30000
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

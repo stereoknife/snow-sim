@@ -15,8 +15,8 @@ MonoBehaviour:
   initialSnowValue:
     x: 0
     y: 0
-    z: 0
-    w: 0
+    z: 1
+    w: 2
   loadFromCache: 1
   cacheLocation: cache
   seed: 1337
@@ -42,3 +42,4 @@ MonoBehaviour:
   surfaceMaxIterations: 500
   surfaceSamples: 10
   surfaceSpeedIncrement: 1
+  gaussianKernelSize: 7

@@ -36,6 +36,7 @@ namespace TFM.SnowSimulation.Data
         [SerializeField] public int surfaceMaxIterations = Wind.Parameters.Default.SurfaceMaxIterations;
         [SerializeField] public int surfaceSamples = Wind.Parameters.Default.SurfaceSamples;
         [SerializeField] public double surfaceSpeedIncrement = Wind.Parameters.Default.SurfaceSpeedIncrement;
+        [SerializeField] public int gaussianKernelSize = Wind.Parameters.Default.GaussianKernelSize;
 
         public Lighting.Parameters LightingParameters => new()
         {
@@ -62,7 +63,8 @@ namespace TFM.SnowSimulation.Data
             SurfaceFalloff = surfaceFalloff,
             SurfaceMaxIterations = surfaceMaxIterations,
             SurfaceSamples = surfaceSamples,
-            SurfaceSpeedIncrement = surfaceSpeedIncrement
+            SurfaceSpeedIncrement = surfaceSpeedIncrement,
+            GaussianKernelSize = gaussianKernelSize,
         };
         
         private int Days(int2 x) => new DateTime(2000, x.y, x.x).DayOfYear;
