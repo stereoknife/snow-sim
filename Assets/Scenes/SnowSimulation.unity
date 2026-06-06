@@ -745,7 +745,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1394619225}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 1ba28e47ac734a06b6f5c549bbf4f8f4, type: 3}
   m_Name: 
@@ -778,7 +778,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1394619225}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e8d1bed610b6c4582bf166ec48cfceb5, type: 3}
   m_Name: 
@@ -807,16 +807,16 @@ MonoBehaviour:
   initialSnowValue:
     x: 0
     y: 0
-    z: 0
-    w: 0
-  snowfall: 1
+    z: 1
+    w: 2
+  snowfall: 0
   windTransport: 1
-  melting: 1
-  stability: 1
-  powderDiffusion: 1
+  melting: 0
+  stability: 0
+  powderDiffusion: 0
   avalanche: 0
-  simpleMelt: 0
-  temperatureTimeline: 1
+  simpleMelt: 1
+  temperatureTimeline: 0
   precipitationTimeline: 0
   windTimeline: 0
   cloudCoverTimeline: 0
