@@ -18,7 +18,9 @@ namespace TFM.Simulation
             public double VenturiIntensity;     // m^-1
             public double DeflectionIntensity;  //
             public double SurfaceFalloff;       // m/s^2
-            public int SurfaceMaxIterations;    // 
+            public int SurfaceMaxIterations;    //
+            
+            public int GaussianKernelSize;
 
             public int SurfaceSamples;
             public double SurfaceSpeedIncrement;
@@ -32,6 +34,7 @@ namespace TFM.Simulation
                 SurfaceMaxIterations = 500,
                 SurfaceSamples = 1,
                 SurfaceSpeedIncrement = 10,
+                GaussianKernelSize = 10,
             };
 
             public int Hash()
@@ -162,7 +165,7 @@ namespace TFM.Simulation
             {
                 height = height,
                 gaussian = gaussian,
-                kernel = 15,
+                kernel = P.GaussianKernelSize / 2,
             };
             dependsOn = gaj.ScheduleParallel(height.Length, 64, dependsOn);
             
