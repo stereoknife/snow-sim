@@ -244,6 +244,7 @@ namespace TFM.Simulation
             private double tempBase, tempIncAltitude;
             private double sunIntensity, cloudFiltering, albedo;
             private double heatCapacity, latentHeat, conductivity;
+            private double testValue;
 
             public MeltJob(double4F snow, doubleF illumination, doubleF height, double step, ref Parameters P)
             {
@@ -260,6 +261,7 @@ namespace TFM.Simulation
                 heatCapacity = 2090 * 110;
                 latentHeat = 333100 * 110;
                 conductivity = 0.05;
+                testValue = P.MeltVolumeFactor;
             }
             
             public void Execute(int index)
@@ -268,7 +270,7 @@ namespace TFM.Simulation
                 var s = snow[index];
                 var snowThickness = csum(s);
                 var airTemp = tempBase + (height[index] + snowThickness) * tempIncAltitude;
-                var snowTemp = min(airTemp, 0);
+                var snowTemp = min(airTemp / testValue, 0);
                 var airConduction = conductivity * max(airTemp, 0);
                 var neededRadiation = -snowTemp * snowThickness * heatCapacity;
                 var solarRadiation = sunIntensity * illumination[index] * cloudFiltering * albedo;
@@ -439,18 +441,19 @@ namespace TFM.Simulation
                 var sd = (h - hn) / dn;
                 var diffusion = select(
                     max(0, sd - diffRestSlope), 
-                    min(0, sd + diffRestSlope), 
+                    clamp(sd + diffRestSlope, -npow, 0), 
                     sd < 0
                 );
                 diffusion *= step * diffRate;
 
-                var i = csum(min(0, diffusion));
-                var o = csum(max(0, diffusion));
+                //var i = csum(min(0, diffusion));
+                //var o = csum(max(0, diffusion));
+                var o = max(0, diffusion);
                 var pow = snow[ij].w;
-                var scale = min(1, (abs(i) + pow) / o);
-                diffusion = select(diffusion, diffusion * scale, sd > 0);
+                //var scale = min(1, (abs(i) + pow) / o);
+                //diffusion = select(diffusion, diffusion * scale, sd > 0);
                 
-                npow = max(0, npow + diffusion);
+                npow = max(0, npow + o * min(1, pow / csum(o)));
                 du.w = npow.x;
                 dd.w = npow.y;
                 dl.w = npow.z;
@@ -462,7 +465,7 @@ namespace TFM.Simulation
                 snow[down.x, ij.y] = dr;
                 
                 var s = snow[index];
-                s.w -= min(csum(diffusion), s.w);
+                s.w = max(s.w - csum(o), 0);
                 snow[index] = s;
             }
         }
@@ -519,7 +522,7 @@ namespace TFM.Simulation
                 windErosion = P.WindErosionRate;
                 windSpeed = P.WindSpeed;
                 stage = 0;
-
+                
                 var windLayer = P.WindSpeed / P.WindSpeedPerLayer - 1;
                 lowLayerZero = windLayer < 0;
                 windLayer = clamp(windLayer, 0, windAltitude.layers - 1);
@@ -534,19 +537,21 @@ namespace TFM.Simulation
             {
                 int2 ij = snow.cell(index);
                 if ((ij.y * 2 + ij.x) % 5 != stage) return;
+                if (snow[index].w < 0.001) return;
                 
                 // 0.01 is wind_snow_terrain
-                var grad2 = -field.gradient2(height, snow, index) * 0.01;
-                var w = abs(wind[index] * windSpeed);
-                var curv = min(dot(w, grad2), 0);
+                var snowGrad2 = -field.gradient2(height, snow, index) * 0.01;
+                //var windGrad2 = -field.gradient2(windAltLow, windAltHigh, windLerp, index) * 0.01;
+                var w = abs(wind[index]);
+                var curv = max(dot(w, snowGrad2), 0);
                 var d = snow[index];
                 var snowAmt = csum(d);
                 var windAltitude = lerp(windAltLow[index], windAltHigh[index], windLerp);
 
-                curv = select(curv, 0, windAltitude - height[index] - snowAmt > 0);
+                curv = select(curv, 0, windAltitude > height[index] + snowAmt);
                 
-                // 1 is wind_snow_capacity
-                var erosion = clamp(curv * windErosion, 0, min(snowAmt, 1));
+                // 0.1 is wind_snow_capacity
+                var erosion = clamp(curv * 10, 0, min(snowAmt, windSpeed * windErosion));
                 erosion = clamp(height[index] + snowAmt - windAltitude, 0, erosion);
                 
                 var windDir = (int2)sign(wind[index]);
