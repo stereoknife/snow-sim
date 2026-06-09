@@ -29,6 +29,16 @@ namespace DemoApp
 
         private void Start()
         {
+            var args = System.Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (args[i] == "--iters" && args.Length > i + 1)
+                {
+                    if (Int32.TryParse(args[i + 1], out var value)){
+                        measurements = value;
+                    }
+                }
+            }
             _renderer = GetComponent<TerrainMeshRenderer>();
             StartRecording();
         }
@@ -84,6 +94,10 @@ namespace DemoApp
             snowSnapshot.Dispose();
             
             Debug.Log("Recording finished");
+            
+#if !UNITY_EDITOR
+            Application.Quit();
+#endif
         }
 
         private unsafe void WriteToDisk()

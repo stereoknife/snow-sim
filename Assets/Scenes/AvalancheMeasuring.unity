@@ -755,15 +755,14 @@ MonoBehaviour:
   initialSnowValue:
     x: 0
     y: 0
-    z: 0
+    z: 1
     w: 0
-  forceGeneration: 0
-  snowfall: 1
-  windTransport: 1
-  melting: 1
+  snowfall: 0
+  windTransport: 0
+  melting: 0
   stability: 0
-  powderDiffusion: 1
-  avalanche: 0
+  powderDiffusion: 0
+  avalanche: 1
   simpleMelt: 0
   temperatureTimeline: 1
   precipitationTimeline: 0
@@ -774,8 +773,6 @@ MonoBehaviour:
   bufferSize: 100
   frames: 100
   time: 0
-  material: {fileID: 2100000, guid: 038cdeaf2bca24f21b671441f7f4ba75, type: 2}
-  drawWindMesh: 0
 --- !u!114 &1394619233
 MonoBehaviour:
   m_ObjectHideFlags: 0
