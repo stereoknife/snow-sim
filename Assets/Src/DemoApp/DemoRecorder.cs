@@ -1,11 +1,14 @@
-﻿using System.Collections;
+﻿#if UNITY_EDITOR
+using System.Collections;
 using EasyButtons;
 using TFM.Components;
+using TFM.Components.Visualization;
 using TFM.Solvers;
 using UnityEditor;
 using UnityEditor.Presets;
 using UnityEditor.Recorder;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 namespace DemoApp
 {
@@ -61,3 +64,4 @@ namespace DemoApp
         }
     }
 }
+#endif

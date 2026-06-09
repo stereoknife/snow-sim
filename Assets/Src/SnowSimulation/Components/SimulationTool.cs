@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using System;
 using HPML;
 using TFM.Components.Visualization;
@@ -99,3 +100,4 @@ namespace TFM.Components
         }
     }
 }
+#endif
