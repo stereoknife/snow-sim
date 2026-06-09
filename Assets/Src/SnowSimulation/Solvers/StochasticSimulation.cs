@@ -9,6 +9,7 @@ using TFM.SnowSimulation.Data;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
+using Unity.Mathematics;
 using Unity.Serialization.Binary;
 using UnityEngine;
 using Random = Unity.Mathematics.Random;
@@ -233,6 +234,15 @@ namespace TFM.Solvers
             if (UsePrecipTimeline) _frequencies[EventId.SnowfallStart] = 0f;
 
             _parameters.CloudCover = 0;
+        }
+        
+        public void SetSnow(double4 value)
+        {
+            for (int i = 0; i < _snow.Length; i++)
+            {
+                _snow[i] = value;
+                if (any(_snow.index(i) == 0 | _snow.index(i) == _snow.dimension - 1)) _snow[i] = 0;
+            }
         }
 
         private EventId Next(out float dt)
