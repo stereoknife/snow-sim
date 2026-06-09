@@ -270,11 +270,11 @@ namespace TFM.Simulation
                 var s = snow[index];
                 var snowThickness = csum(s);
                 var airTemp = tempBase + (height[index] + snowThickness) * tempIncAltitude;
-                var snowTemp = min(airTemp / testValue, 0);
-                var airConduction = conductivity * max(airTemp, 0);
-                var neededRadiation = -snowTemp * snowThickness * heatCapacity;
+                var snowTemp = min(0, testValue);
+                var airConduction = conductivity * (airTemp - snowTemp);
+                var neededRadiation = snowTemp * snowThickness * heatCapacity;
                 var solarRadiation = sunIntensity * illumination[index] * cloudFiltering * albedo;
-                var totalRadiation = solarRadiation + airConduction - neededRadiation;
+                var totalRadiation = solarRadiation + airConduction + neededRadiation;
                 var meltRate = totalRadiation * step / (latentHeat * snowThickness);
 
                 var melt = -saturate(meltRate) * snowThickness;
@@ -285,6 +285,11 @@ namespace TFM.Simulation
                 s.x += min(0, s.y);
                 s = select(s, 0, s < 0.001);
                 snow[index] = s;
+
+                if (index == 6239)
+                {
+                    //Debug.Log($"Air temp: {airTemp}\nSnow temp: {snowTemp}\nAir cond: {airConduction}\nNeeded radiation: {neededRadiation}\nSolar radiation: {solarRadiation}\nTotal radiation: {totalRadiation}\nMelt rate: {meltRate}");
+                }
             }
         }
         
@@ -688,13 +693,13 @@ namespace TFM.Simulation
                 for (int k = 0; k < kLoop; k++)
                 {
                     var nij = ij - Dirs[k];
-                    nij = select(nij, -nij, nij < 0);
-                    nij = select(nij, 2 * (Snow.dimension - 1) - nij, nij > Snow.dimension - 1);
+                    nij = abs(nij);
+                    nij = Snow.dimension - 1 - abs(Snow.dimension - 1 - nij);
                     nflow[k] = FlowR[Snow.index(nij) * kStride + k];
                     
                     nij = ij + Dirs[k];
-                    nij = select(nij, -nij, nij < 0);
-                    nij = select(nij, 2 * (Snow.dimension - 1) - nij, nij > Snow.dimension - 1);
+                    nij = abs(nij);
+                    nij = Snow.dimension - 1 - abs(Snow.dimension - 1 - nij);
 
                     nh[k] = Height[nij];
                     ns[k] = csum(Snow[nij]);
@@ -706,8 +711,8 @@ namespace TFM.Simulation
                 var flow = FlowR.ReinterpretLoad<double4>(index * kStride);
                 
                 var pressure = Density * Gravity * (h - nh);
-                var dist = select(Height.iCellSize.x * SQRT2_DBL, Height.iCellSize.x, Perp);
-                var acc = pressure / Density * dist;
+                var dist = select(Height.cellSize.x * SQRT2_DBL, Height.cellSize.x, Perp);
+                var acc = pressure / Density / dist;
                 flow += acc * c * Dt;
                         
                 double4 friction = Gravity * RestSlope * c * Dt * Temp;
@@ -743,8 +748,8 @@ namespace TFM.Simulation
                 for (int k = 0; k < kLoop; k++)
                 {
                     var nij = ij - Dirs[k];
-                    nij = select(nij, -nij, nij < 0);
-                    nij = select(nij, 2 * (Snow.dimension - 1) - nij, nij > Snow.dimension - 1);
+                    nij = abs(nij);
+                    nij = Snow.dimension - 1 - abs(Snow.dimension - 1 - nij);
                     nix[k] += Snow.index(nij) * kStride;
                     nflow[k] = FlowR[nix[k]];
                 }
@@ -789,8 +794,8 @@ namespace TFM.Simulation
                 for (int k = 0; k < kLoop; k++)
                 {
                     var nij = ij - Dirs[k];
-                    nij = select(nij, -nij, nij < 0);
-                    nij = select(nij, 2 * (Snow.dimension - 1) - nij, nij > Snow.dimension - 1);
+                    nij = abs(nij);
+                    nij = Snow.dimension - 1 - abs(Snow.dimension - 1 - nij);
                     nflow[k] = -Flow[Snow.index(nij) * kStride + k];
                 }
 
@@ -800,6 +805,7 @@ namespace TFM.Simulation
                 var s = Snow[index];
                 s.z -= Dt * square(Snow.iCellSize.x) * csum(flow);
                 s.z = max(s.z, 0);
+                if (any(ij == 0 | ij == Snow.dimension - 1)) s = 0;
                 Snow[index] = s;
                 Moving[index] = moving;
             }
