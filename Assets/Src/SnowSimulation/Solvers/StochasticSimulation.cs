@@ -419,8 +419,8 @@ namespace TFM.Solvers
         private void CachePaths(SimulationTerrain terrain, SimulationParameters parameters, out string lightPath, out string windPath) {
             var lightHash = xxHash3.Hash64(parameters.LightingParameters);
             var windHash = xxHash3.Hash64(parameters.WindParameters);
-            lightPath = $"{Application.dataPath}/{parameters.cacheLocation}/{terrain.name}.{lightHash.x:x}{lightHash.y:x}.bytes";
-            windPath = $"{Application.dataPath}/{parameters.cacheLocation}/{terrain.name}.{windHash.x:x}{windHash.y:x}.bytes";
+            lightPath = $"{Application.persistentDataPath}/{parameters.cacheLocation}/{terrain.name}.{lightHash.x:x}{lightHash.y:x}.bytes";
+            windPath = $"{Application.persistentDataPath}/{parameters.cacheLocation}/{terrain.name}.{windHash.x:x}{windHash.y:x}.bytes";
         }
         
         private unsafe (bool, bool) TryLoadCacheData(string lightPath, string windPath)
