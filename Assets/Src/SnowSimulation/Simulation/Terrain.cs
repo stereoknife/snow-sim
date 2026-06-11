@@ -61,7 +61,7 @@ namespace TFM.Simulation
         
         public static JobHandle Curvature(doubleF height, NativeArray<int> curvature, JobHandle dependsOn)
         {
-            var windowSize = 3;
+            var windowSize = 5;
             var cj = new CurvatureJob
             {
                 curvatures = curvature,
@@ -86,7 +86,7 @@ namespace TFM.Simulation
         
         public static JobHandle Roughness(doubleF height, doubleF roughness, JobHandle dependsOn)
         {
-            var windowSize = 3;//(int)round(100 * height.iCellSize.x);
+            var windowSize = 5;//(int)round(100 * height.iCellSize.x);
             var rj = new RoughnessJob
             {
                 height = height,
