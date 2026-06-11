@@ -24,7 +24,7 @@ namespace TFM.Components.Visualization
     
         private doubleF _heightfield;
         private double4F _snowfield;
-        private Dictionary<TextureId, Texture2D> _textures = new();
+        public Dictionary<TextureId, Texture2D> _textures = new();
         
         private RenderParams _rp;
         private Mesh _mesh;
