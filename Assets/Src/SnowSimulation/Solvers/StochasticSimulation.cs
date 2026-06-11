@@ -188,9 +188,9 @@ namespace TFM.Solvers
             var gf = new doubleF(_height, Allocator.TempJob);
             var cf = new NativeArray<int>(_height.Length, Allocator.TempJob);
             
-            var rh = Terrain.Roughness(_height, rf, dependsOn);
+            var rh = Terrain.Roughness(_height, rf, 5, dependsOn);
             var gh = Terrain.Gradient(_height, gf, dependsOn);
-            var ch = Terrain.Curvature(_height, cf, dependsOn);
+            var ch = Terrain.Curvature(_height, cf, 5, dependsOn);
 
             //rh = _renderer.AddTexture(TerrainMeshRenderer.TextureId.TerrainRoughness, rf, rh);
             //gh = _renderer.AddTexture(TerrainMeshRenderer.TextureId.TerrainGradient, gf, gh);
