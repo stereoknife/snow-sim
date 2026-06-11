@@ -603,7 +603,7 @@ namespace TFM.Simulation
         
         private const int kStride = 4;
         private const int kLoop = kStride;
-        private const double kEpsilon = 1e-6;
+        private const double kEpsilon = 0.01;
         private static readonly int2x4 Dirs = int2x4(int2(-1, -1), int2(-1, 0), int2(-1, 1), int2(0, -1));
         private static readonly int4x2 DirsT = transpose(Dirs);
         private static readonly bool4 Perp = DirsT.c0 == 0 | DirsT.c1 == 0;
@@ -707,19 +707,19 @@ namespace TFM.Simulation
                 }
 
                 nh += ns;
-                moving |= any(nflow > kEpsilon);
+                moving |= any(nflow > kEpsilon * Dt);
                 var flow = FlowR.ReinterpretLoad<double4>(index * kStride);
                 
-                var pressure = Density * Gravity * (h - nh);
+                var pressure = Gravity * (h - nh);
                 var dist = select(Height.cellSize.x * SQRT2_DBL, Height.cellSize.x, Perp);
-                var acc = pressure / Density / dist;
+                var acc = pressure / dist;
                 flow += acc * c * Dt;
                         
                 double4 friction = Gravity * RestSlope * c * Dt * Temp;
                 friction = min(abs(flow), friction);
                 flow += friction * -sign(flow);
                         
-                var viscosity = -KViscosity * flow * c * Dt * (1 - Temp);
+                var viscosity = -KViscosity * flow * Dt * (1 - Temp);
                 flow += select(viscosity, -flow, abs(viscosity) > abs(flow));
                 
                 moving |= any(flow < 0 & nmov);
@@ -800,7 +800,7 @@ namespace TFM.Simulation
                 }
 
                 flow += nflow;
-                moving |= any(abs(flow) > kEpsilon);
+                moving |= any(abs(flow) > kEpsilon * Dt);
 
                 var s = Snow[index];
                 s.z -= Dt * square(Snow.iCellSize.x) * csum(flow);
