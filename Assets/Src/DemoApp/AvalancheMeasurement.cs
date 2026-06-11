@@ -23,22 +23,32 @@ namespace DemoApp
         [SerializeField] private bool resetAfterAvalanche;
 
         private doubleF snowDiff, snowSnapshot;
+        private float timeout = 20;
 
 #if !UNITY_EDITOR
         private TerrainMeshRenderer _renderer;
 
         private void Start()
         {
-            var args = System.Environment.GetCommandLineArgs();
+            Application.runInBackground = true;
+            var args = Environment.GetCommandLineArgs();
             for (int i = 0; i < args.Length; i++)
             {
                 if (args[i] == "--iters" && args.Length > i + 1)
                 {
-                    if (Int32.TryParse(args[i + 1], out var value)){
+                    if (int.TryParse(args[i + 1], out var value)){
                         measurements = value;
                     }
                 }
+
+                if (args[i] == "--to" && args.Length > i + 1)
+                {
+                    if (float.TryParse(args[i + 1], out var value)){
+                        timeout = value;
+                    }
+                }
             }
+            Debug.Log($"{measurements} measurements");
             _renderer = GetComponent<TerrainMeshRenderer>();
             StartRecording();
         }
@@ -65,7 +75,8 @@ namespace DemoApp
         {
             for (int i = 0; i < measurements; i++)
             {
-                Debug.Log($"Recording {i}");
+                var startTime = Time.unscaledTime;
+                Debug.Log($"{DateTime.Now:hh:mm:ss}/{startTime} Recording {i}");
                 
                 for (int j = 0; j < snowSnapshot.Length; j++)
                 {
@@ -77,14 +88,29 @@ namespace DemoApp
                     _simulation.Step();
                     yield return null;
                     if (!_simulation.Moving.Any(x => x)) break;
+                    if (Time.unscaledTime - startTime > 60 * timeout)
+                    {
+                        var count = _simulation.Moving.Count(b => b);
+                        Debug.Log($"{count} cells still moving. Timeout break.");
+                        break;
+                    }
                 }
                 
                 for (int j = 0; j < snowSnapshot.Length; j++)
                 {
+                    if (math.any(snowDiff.index(j) == 0 | snowDiff.index(j) == snowDiff.dimension - 1)) snowDiff[j] = 0;
                     snowDiff[j] += math.csum(Snowfield[j]) - snowSnapshot[j];
                 }
-                
-                if (resetAfterAvalanche) _simulation.SetSnow(initialSnowValue);
+
+                if (resetAfterAvalanche)
+                {
+                    _simulation.SetSnow(initialSnowValue);
+                    for (int j = 0; j < _simulation.Moving.Length; j++)
+                    {
+                        var simulationMoving = _simulation.Moving;
+                        simulationMoving[j] = false;
+                    }
+                }
             }
             
             WriteToDisk();
@@ -116,9 +142,12 @@ namespace DemoApp
             var negativeDiff = new doubleF(snowDiff, Allocator.TempJob);
             for (int i = 0; i < snowDiff.Length; i++)
             {
-                if (snowDiff[i] < 0) Debug.Log(snowDiff[i]);
-                if (snowDiff[i] > 0) positiveDiff[i] = snowDiff[i];
-                else negativeDiff[i] = snowDiff[i];
+                if (math.any(snowDiff.index(i) == 0 | snowDiff.index(i) == snowDiff.dimension - 1))
+                    positiveDiff[i] = negativeDiff[i] = 0;
+                else if (snowDiff[i] >= 0)
+                    positiveDiff[i] = snowDiff[i];
+                else
+                    negativeDiff[i] = -snowDiff[i];
             }
             var positiveTex = new Texture2D(snowDiff.dimension.x, snowDiff.dimension.y, TextureFormat.RGBA32, false);
             var negativeTex = new Texture2D(snowDiff.dimension.x, snowDiff.dimension.y, TextureFormat.RGBA32, false);
@@ -127,8 +156,8 @@ namespace DemoApp
             JobHandle.CombineDependencies(pjh, njh).Complete();
             positiveTex.Apply(false, false);
             negativeTex.Apply(false,false);
-            File.WriteAllBytes($"{Application.dataPath}/results/positiveDiff.png", positiveTex.EncodeToPNG());
-            File.WriteAllBytes($"{Application.dataPath}/results/negativeDiff.png", negativeTex.EncodeToPNG());
+            File.WriteAllBytes($"{Application.persistentDataPath}/results/positiveDiff.png", positiveTex.EncodeToPNG());
+            File.WriteAllBytes($"{Application.persistentDataPath}/results/negativeDiff.png", negativeTex.EncodeToPNG());
             positiveDiff.Dispose();
             negativeDiff.Dispose();
         }

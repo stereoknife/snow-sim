@@ -713,9 +713,8 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1394619227}
-  - component: {fileID: 1394619232}
+  - component: {fileID: 1394619235}
   - component: {fileID: 1394619234}
-  - component: {fileID: 1394619233}
   m_Layer: 0
   m_Name: Terrain
   m_TagString: Untagged
@@ -738,74 +737,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &1394619232
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1394619225}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 3c11fc535e864c39bde69ba12201a1af, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: SnowSimulation::TFM.Components.SnowSimulation
-  terrain: {fileID: 11400000, guid: 8e7252b7d27344182a1800e661b09408, type: 2}
-  parameters: {fileID: 11400000, guid: 7af48a64b6317420888f8a48d093c9c0, type: 2}
-  initialSnowValue:
-    x: 0
-    y: 0
-    z: 1
-    w: 0
-  snowfall: 0
-  windTransport: 0
-  melting: 0
-  stability: 0
-  powderDiffusion: 0
-  avalanche: 1
-  simpleMelt: 0
-  temperatureTimeline: 1
-  precipitationTimeline: 0
-  windTimeline: 0
-  cloudCoverTimeline: 0
-  enableProfiling: 1
-  outputFile: melt_1024
-  bufferSize: 100
-  frames: 100
-  time: 0
---- !u!114 &1394619233
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1394619225}
-  m_Enabled: 0
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 1ba28e47ac734a06b6f5c549bbf4f8f4, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: SnowSimulation::TFM.TerrainRenderer
-  drawTerrain: 1
-  drawSnow: 1
-  drawWind: 0
-  drawFinal: 0
-  windLevel: 0
-  mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
-  layersMaterial: {fileID: 2100000, guid: 3a1f2a5c9cac049c79abd90db5187f0d, type: 2}
-  windMaterial: {fileID: 2100000, guid: 038cdeaf2bca24f21b671441f7f4ba75, type: 2}
-  terrainMaterial: {fileID: 2100000, guid: b0bfbed33fa6148a3b5bc6e782c63d59, type: 2}
-  terrain: {r: 0.4245283, g: 0.4245283, b: 0.4245283, a: 1}
-  compacted: {r: 0.3809185, g: 0.42026573, b: 0.754717, a: 1}
-  stable: {r: 0.495283, g: 0.97261226, b: 1, a: 1}
-  unstable: {r: 1, g: 0.2688679, b: 0.2688679, a: 1}
-  powder: {r: 1, g: 1, b: 1, a: 1}
-  renderBox:
-    x: 0
-    y: 1
-    z: 0
-    w: 1
-  scale: 100
-  snowScale: 1
 --- !u!114 &1394619234
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -825,6 +756,43 @@ MonoBehaviour:
   snow: {r: 0, g: 0, b: 0, a: 0}
   overlayLerp: 0
   overlay: 0
+--- !u!114 &1394619235
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1394619225}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c242a438fb91428288d0fd9fd850538e, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DemoApp.AvalancheMeasurement
+  terrain: {fileID: 11400000, guid: 8e7252b7d27344182a1800e661b09408, type: 2}
+  parameters: {fileID: 11400000, guid: 7af48a64b6317420888f8a48d093c9c0, type: 2}
+  initialSnowValue:
+    x: 0
+    y: 0
+    z: 1
+    w: 0
+  snowfall: 0
+  windTransport: 0
+  melting: 0
+  stability: 0
+  powderDiffusion: 0
+  avalanche: 1
+  simpleMelt: 0
+  temperatureTimeline: 0
+  precipitationTimeline: 0
+  windTimeline: 0
+  cloudCoverTimeline: 0
+  enableProfiling: 0
+  outputFile: 
+  bufferSize: 0
+  frames: 0
+  time: 0
+  measurements: 100
+  resetAfterAvalanche: 1
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
