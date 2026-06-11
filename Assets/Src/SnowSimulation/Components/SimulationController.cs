@@ -19,6 +19,7 @@ namespace TFM.Components
         [SerializeField] private SimulationTerrain terrain;
         [SerializeField] private SimulationParameters parameters;
         [SerializeField] protected double4 initialSnowValue;
+        [SerializeField] private float volFactor;
         [Header("Events")]
         [SerializeField] private bool snowfall;
         [SerializeField] private bool windTransport;
