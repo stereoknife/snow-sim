@@ -693,17 +693,24 @@ namespace TFM.Simulation
                 for (int k = 0; k < kLoop; k++)
                 {
                     var nij = ij - Dirs[k];
-                    nij = abs(nij);
-                    nij = Snow.dimension - 1 - abs(Snow.dimension - 1 - nij);
-                    nflow[k] = FlowR[Snow.index(nij) * kStride + k];
+                    if (all(nij >= 0 & nij < Snow.dimension))
+                    {
+                        nflow[k] = FlowR[Snow.index(nij) * kStride + k];
+                    }
                     
                     nij = ij + Dirs[k];
-                    nij = abs(nij);
-                    nij = Snow.dimension - 1 - abs(Snow.dimension - 1 - nij);
-
-                    nh[k] = Height[nij];
-                    ns[k] = csum(Snow[nij]);
-                    nmov[k] = Moving[Snow.index(nij)];
+                    if (all(nij >= 0 & nij < Snow.dimension))
+                    {
+                        nh[k] = Height[nij];
+                        ns[k] = csum(Snow[nij]);
+                        nmov[k] = Moving[Snow.index(nij)];
+                    }
+                    else
+                    {
+                        nij = abs(nij);
+                        nij = Snow.dimension - 1 - abs(Snow.dimension - 1 - nij);
+                        nh[k] = 2 * h - Height[nij];
+                    }
                 }
 
                 nh += ns;
@@ -744,25 +751,30 @@ namespace TFM.Simulation
                 var flow = FlowR.ReinterpretLoad<double4>(index * kStride);
                 double4 nflow = 0;
                 var nix = int4(0, 1, 2, 3);
+                var valid = bool4(false);
                 
                 for (int k = 0; k < kLoop; k++)
                 {
                     var nij = ij - Dirs[k];
-                    nij = abs(nij);
-                    nij = Snow.dimension - 1 - abs(Snow.dimension - 1 - nij);
+                    //nij = abs(nij);
+                    //nij = Snow.dimension - 1 - abs(Snow.dimension - 1 - nij);
+                    if (any(nij < 0 & nij >= Snow.dimension)) continue;
+                    
                     nix[k] += Snow.index(nij) * kStride;
                     nflow[k] = FlowR[nix[k]];
+                    valid[k] = true;
                 }
 
                 var of = csum(max(0, flow) - min(0, nflow));
                 var scale = square(Snow.cellSize.x) * Snow[index].z;
-                scale = select(1, scale / of, of > scale);
+                scale = min(1, scale / of);
 
                 flow *= scale;
                 nflow *= scale;
                 
                 for (int k = 0; k < kLoop; k++)
                 {
+                    if (!valid[k]) continue;
                     if (flow[k] > 0)
                     {
                         FlowW[index * kStride + k] = flow[k];
@@ -786,28 +798,27 @@ namespace TFM.Simulation
             public void Execute(int index)
             {
                 var ij = Snow.cell(index);
+                if (any(ij <= 0 | ij >= Snow.dimension - 1)) return;
                 var moving = false;
-
                 var flow = Flow.ReinterpretLoad<double4>(index * kStride);
                 double4 nflow = 0;
                 
                 for (int k = 0; k < kLoop; k++)
                 {
                     var nij = ij - Dirs[k];
-                    nij = abs(nij);
-                    nij = Snow.dimension - 1 - abs(Snow.dimension - 1 - nij);
+                    if (any(nij >= Snow.dimension | nij < 0)) continue;
                     nflow[k] = -Flow[Snow.index(nij) * kStride + k];
                 }
 
                 flow += nflow;
                 moving |= any(abs(flow) > kEpsilon * Dt);
+                Moving[index] = moving;
 
                 var s = Snow[index];
                 s.z -= Dt * square(Snow.iCellSize.x) * csum(flow);
                 s.z = max(s.z, 0);
                 if (any(ij == 0 | ij == Snow.dimension - 1)) s = 0;
                 Snow[index] = s;
-                Moving[index] = moving;
             }
         }
 
