@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using TFM.Solvers;
+using Unity.Mathematics;
 using UnityEngine;
 
 namespace TFM.Components.Analysis
@@ -22,7 +23,7 @@ namespace TFM.Components.Analysis
         public struct AverageRecord
         {
             public StochasticSimulation.EventId eventId;
-            public double totalDuration, averageDuration;
+            public double totalDuration, averageDuration, longestDuration;
             public int numEvents;
             
             public string CSV => $"{eventId.ToString()} Average,{numEvents},{totalDuration},{averageDuration}";
@@ -113,11 +114,13 @@ namespace TFM.Components.Analysis
             {
                 var total = 0.0;
                 var num = 0;
+                var longest = 0.0;
 
                 foreach (var record in list)
                 {
                     total += record.duration;
                     num++;
+                    longest = math.max(longest, record.duration);
                 }
 
                 _averageRecords[ev] = new AverageRecord
@@ -125,6 +128,7 @@ namespace TFM.Components.Analysis
                     totalDuration = total,
                     numEvents = num,
                     averageDuration = total / num,
+                    longestDuration =  longest,
                     eventId = ev
                 };
             }
@@ -145,7 +149,7 @@ namespace TFM.Components.Analysis
 
             if (writeAverage) foreach (var (ev, record) in Averages())
             {
-                writer.WriteLine($"-1,{ev.ToString()} Average,-1,{record.averageDuration}");
+                writer.WriteLine($"{record.numEvents},{ev.ToString()} Average,{record.averageDuration},{record.longestDuration}");
             }
         }
     }

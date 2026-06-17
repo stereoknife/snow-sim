@@ -713,7 +713,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1394619227}
-  - component: {fileID: 1394619235}
+  - component: {fileID: 1394619236}
   - component: {fileID: 1394619234}
   - component: {fileID: 1394619233}
   m_Layer: 0
@@ -790,7 +790,7 @@ MonoBehaviour:
   snow: {r: 0, g: 0, b: 0, a: 0}
   overlayLerp: 0
   overlay: 0
---- !u!114 &1394619235
+--- !u!114 &1394619236
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -799,9 +799,9 @@ MonoBehaviour:
   m_GameObject: {fileID: 1394619225}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f3c970d7c6a2408db7aff809efd2d1fc, type: 3}
+  m_Script: {fileID: 11500000, guid: 541f867b1d5742969beb981f35eb7360, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: SnowSimulation::TFM.Components.EditorSimulationController
+  m_EditorClassIdentifier: Assembly-CSharp::DemoApp.PerformanceMeasurement
   terrain: {fileID: 11400000, guid: 8e7252b7d27344182a1800e661b09408, type: 2}
   parameters: {fileID: 11400000, guid: 7af48a64b6317420888f8a48d093c9c0, type: 2}
   initialSnowValue:
@@ -810,18 +810,18 @@ MonoBehaviour:
     z: 0
     w: 0
   volFactor: 10
-  snowfall: 0
-  windTransport: 0
-  melting: 0
-  stability: 0
-  powderDiffusion: 0
-  avalanche: 0
-  simpleMelt: 0
-  temperatureTimeline: 0
+  snowfall: 1
+  windTransport: 1
+  melting: 1
+  stability: 1
+  powderDiffusion: 1
+  avalanche: 1
+  simpleMelt: 1
+  temperatureTimeline: 1
   precipitationTimeline: 0
   windTimeline: 0
   cloudCoverTimeline: 0
-  enableProfiling: 0
+  enableProfiling: 1
   outputFile: 
   bufferSize: 0
   frames: 0

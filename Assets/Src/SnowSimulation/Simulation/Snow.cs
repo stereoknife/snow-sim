@@ -763,7 +763,7 @@ namespace TFM.Simulation
                     var nij = ij - Dirs[k];
                     //nij = abs(nij);
                     //nij = Snow.dimension - 1 - abs(Snow.dimension - 1 - nij);
-                    if (any(nij < 0 & nij >= Snow.dimension)) continue;
+                    if (any(nij < 0 | nij >= Snow.dimension)) continue;
                     
                     nix[k] += Snow.index(nij) * kStride;
                     nflow[k] = FlowR[nix[k]];

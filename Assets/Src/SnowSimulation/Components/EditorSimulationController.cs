@@ -55,7 +55,7 @@ namespace TFM.Components
         public ScalarField2D WindAltitude => _simulation.WindAltitude;
 
         protected StochasticSimulation _simulation;
-        private bool runSim = false;
+        protected bool runSim = false;
 
         private TerrainMeshRenderer _renderer;
         protected int minDay;
@@ -162,6 +162,8 @@ namespace TFM.Components
         {
             _selectedPoints = new NativeHashSet<int>(10, Allocator.Persistent);
             _highlightedPoints = new NativeHashSet<int>(10, Allocator.Persistent);
+            
+            var renderer = GetComponent<TerrainMeshRenderer>();
 
             _simulation = new StochasticSimulation
             {
@@ -182,6 +184,7 @@ namespace TFM.Components
                     [StochasticSimulation.EventId.StabilityStep] = stability
                 },
                 UseSimpleMelt = simpleMelt,
+                RandomAvalanche = false,
             };
             
             _simulation.Init(terrain);
@@ -207,6 +210,8 @@ namespace TFM.Components
             GenerateTemperatureTimeline();
             GenerateCloudPrecipTimelines();
             GenerateWindTimeline();
+            
+            renderer.SetTerrain(_simulation.Height, _simulation.SnowLayers, true);
         }
         
         private void SetSimulationParams()
