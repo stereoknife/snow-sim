@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using HPML;
 using HPML.Serialization;
+using TFM.Components.Analysis;
 using TFM.Simulation;
 using TFM.SnowSimulation.Data;
 using Unity.Collections;
@@ -33,6 +34,8 @@ namespace TFM.Solvers
             AvalancheStart,
         }
 
+        private SimulationTerrain _terrain;
+
         private Snow.Parameters _parameters;
         private doubleF _height;
         private doubleF _illumination;
@@ -44,10 +47,10 @@ namespace TFM.Solvers
         private NativeArray<double> _flow;
         private NativeArray<bool> _moving;
 
-        private NativeList<double> _tempTimeline;
-        private NativeList<double> _windTimeline;
-        private NativeList<double> _cloudTimeline;
-        private NativeList<double> _precipTimeline;
+        private NativeList<float> _tempTimeline;
+        private NativeList<float> _windTimeline;
+        private NativeList<float> _cloudTimeline;
+        private NativeList<float> _precipTimeline;
 
         private Random _rng;
         private uint _seed;
@@ -55,21 +58,16 @@ namespace TFM.Solvers
         private readonly Dictionary<EventId, float> _periods = new(Enum.GetValues(typeof(EventId)).Length);
         private readonly Dictionary<EventId, float> _frequencies = new(Enum.GetValues(typeof(EventId)).Length);
         public Dictionary<EventId, bool> Enabled { get; } = new(Enum.GetValues(typeof(EventId)).Length);
-
-        private bool _profilingEnabled;
-        private (EventId, float, double)[] _profilingData;
-        private int _profilingDataIndex;
         
-        public NativeList<double> TempTimeline => _tempTimeline;
-        public NativeList<double> WindTimeline => _windTimeline;
-        public NativeList<double> CloudTimeline => _cloudTimeline;
-        public NativeList<double> PrecipTimeline => _precipTimeline;
+        private bool _profilingEnabled = true;
+        
+        public NativeList<float> TempTimeline => _tempTimeline;
+        public NativeList<float> WindTimeline => _windTimeline;
+        public NativeList<float> CloudTimeline => _cloudTimeline;
+        public NativeList<float> PrecipTimeline => _precipTimeline;
+        public KeyValuePair<EventId, float>[] Periods => _periods.ToArray();
 
-        public Snow.Parameters Parameters
-        {
-            get => _parameters;
-            set => _parameters = value;
-        }
+        public ref Snow.Parameters Parameters => ref _parameters;
 
         public doubleF Height => _height;
         public doubleF Illumination => _illumination;
@@ -91,51 +89,77 @@ namespace TFM.Solvers
         public int simulationFrames { get; private set; }
         public EventId lastEventId { get; private set; }
 
+        public bool IsInit { get; private set; } = false;
+        public bool IsReady { get; private set; } = false;
+
+        public SimulationProfiler Profiler { get; private set; } = new SimulationProfiler();
+
         public void SetEventPeriod(EventId eventId, float period)
         {
             _periods[eventId] = period;
             if (_frequencies[eventId] > 0) _frequencies[eventId] = 1f / period;
         }
 
-        public void Init(SimulationTerrain terrain, SimulationParameters parameters)
+        public StochasticSimulation()
+        {
+            foreach (EventId value in Enum.GetValues(typeof(EventId)))
+            {
+                Enabled[value] = false;
+            }
+        }
+
+        public void Init(SimulationTerrain terrain)
+        {
+            _terrain = terrain;
+            _height.Dispose();
+            _height = doubleF.FromTexture(terrain.heightmap, terrain.size, Allocator.Persistent);
+            _snow.Dispose();
+            _snow = new double4F(_height, Allocator.Persistent);
+            IsInit = true;
+            IsReady = false;
+            
+            _tempTimeline = new NativeList<float>(0, Allocator.Persistent);
+            _cloudTimeline = new NativeList<float>(0, Allocator.Persistent);
+            _windTimeline = new NativeList<float>(0, Allocator.Persistent);
+            _precipTimeline = new NativeList<float>(0, Allocator.Persistent);
+        }
+
+        public void Generate(Lighting.Parameters lightParams, Wind.Parameters windParams, bool loadFromCache, uint seed)
+            => Generate(windParams, lightParams, loadFromCache, seed);
+        public void Generate(Wind.Parameters windParams, Lighting.Parameters lightParams, bool loadFromCache, uint seed)
         {
             BinarySerialization.AddGlobalAdapter(new doubleFAdapter(Allocator.Persistent));
             BinarySerialization.AddGlobalAdapter(new double2FAdapter(Allocator.Persistent));
             BinarySerialization.AddGlobalAdapter(new ScalarField2DAdapter(Allocator.Persistent));
             
-            _height = doubleF.FromTexture(terrain.heightmap, terrain.size, Allocator.Persistent);
-            _snow = new double4F(_height, Allocator.Persistent, parameters.initialSnowValue);
             _hazard = new doubleF(_height, Allocator.Persistent);
             _flow = new NativeArray<double>(_height.Length * 4 * 2, Allocator.Persistent);
             _moving = new NativeArray<bool>(_height.Length, Allocator.Persistent);
             
-            var startDay = parameters.LightingParameters.DirectStartingDay;
-            var endDay = parameters.LightingParameters.DirectEndDay;
+            var startDay = lightParams.DirectStartingDay;
+            var endDay = lightParams.DirectEndDay;
             if (startDay > endDay) endDay += 365;
             var tlLength = endDay - startDay;
-            _tempTimeline = new NativeList<double>(tlLength, Allocator.Persistent);
-            _cloudTimeline = new NativeList<double>(tlLength, Allocator.Persistent);
-            _windTimeline = new NativeList<double>(tlLength, Allocator.Persistent);
-            _precipTimeline = new NativeList<double>(tlLength, Allocator.Persistent);
             
             var success = (false, false);
-            CachePaths(terrain, parameters, out var lightPath, out var windPath);
-            if (parameters.loadFromCache) success = TryLoadCacheData(lightPath, windPath);
+            CachePaths(_terrain, lightParams, windParams, out var lightPath, out var windPath);
+            if (loadFromCache) success = TryLoadCacheData(lightPath, windPath);
 
             var lh = new JobHandle();
             var wh = new JobHandle();
-            if (!success.Item1) lh = GenerateLightingData(parameters.LightingParameters, lh);
-            if (!success.Item2) wh = GenerateWindData(parameters.WindParameters, wh);
+            if (!success.Item1) lh = GenerateLightingData(lightParams, lh);
+            if (!success.Item2) wh = GenerateWindData(windParams, wh);
             var hh = GenerateHazardData(new JobHandle());
             JobHandle.CombineDependencies(lh, wh, hh).Complete();
             
             SaveCacheData(lightPath, windPath);
             
-            _seed = parameters.seed;
+            _seed = seed;
             _parameters = Snow.Parameters.Default;
-            _parameters.WindSpeedPerLayer = parameters.surfaceSpeedIncrement;
-            _parameters.WindSpeed = _parameters.WindMaxSpeed = parameters.surfaceSpeedIncrement * parameters.surfaceSamples;
+            _parameters.WindSpeedPerLayer = windParams.SurfaceSpeedIncrement;
+            _parameters.WindSpeed = _parameters.WindMaxSpeed = windParams.SurfaceSpeedIncrement * windParams.SurfaceSamples;
             Reset();
+            IsReady = true;
         }
         
         private JobHandle GenerateLightingData(Lighting.Parameters parameters, JobHandle dependsOn)
@@ -299,6 +323,7 @@ namespace TFM.Solvers
             var ev = lastEventId = Next(out var dt);
             var jh = new JobHandle();
             var preEventTime = DateTime.Now;
+            var preEventInGameTime = Time.unscaledTime;
             switch (ev)
             {
                 case EventId.MeltStep:
@@ -355,9 +380,7 @@ namespace TFM.Solvers
 
             if (_profilingEnabled)
             {
-                _profilingData[_profilingDataIndex] =
-                    (ev, simulationTime, (postEventTime - preEventTime).TotalMilliseconds);
-                _profilingDataIndex = (_profilingDataIndex + 1) % _profilingData.Length;
+                Profiler.AddRecord(ev, preEventInGameTime, (postEventTime-preEventTime).TotalMilliseconds);
             }
 
             simulationTime += dt;
@@ -383,44 +406,23 @@ namespace TFM.Solvers
             if (cell >= 0) _moving[cell] = true;
         }
 
-        public void EnableProfiling(int capacity)
+        public void EnableProfiling()
         {
             _profilingEnabled = true;
-            _profilingData = new (EventId, float, double)[capacity];
-            _profilingDataIndex = 0;
         }
 
         public void DisableProfiling()
         {
             _profilingEnabled = false;
-            _profilingData = null;
-        }
-
-        public void ExportProfilingData(string file)
-        {
-            using var writer = new StreamWriter(File.Open(file, FileMode.Create));
-            writer.WriteLine("number, event, time, duration");
-            var totalDuration = 0d;
-            for (int i = _profilingDataIndex, j = 0; i < _profilingData.Length; i++, j++)
-            {
-                var (ev, time, duration) = _profilingData[i];
-                writer.WriteLine($"{j},{ev.ToString()},{time},{duration}");
-                totalDuration += duration;
-            }
-
-            for (int i = 0, j = _profilingData.Length - _profilingDataIndex; i < _profilingDataIndex; i++, j++)
-            {
-                var (ev, time, duration) = _profilingData[i];
-                writer.WriteLine($"{j},{ev.ToString()},{time},{duration}");
-                totalDuration += duration;
-            }
         }
         
-        private void CachePaths(SimulationTerrain terrain, SimulationParameters parameters, out string lightPath, out string windPath) {
-            var lightHash = xxHash3.Hash64(parameters.LightingParameters);
-            var windHash = xxHash3.Hash64(parameters.WindParameters);
-            lightPath = $"{Application.persistentDataPath}/{parameters.cacheLocation}/{terrain.name}.{lightHash.x:x}{lightHash.y:x}.bytes";
-            windPath = $"{Application.persistentDataPath}/{parameters.cacheLocation}/{terrain.name}.{windHash.x:x}{windHash.y:x}.bytes";
+        private void CachePaths(SimulationTerrain terrain, Lighting.Parameters lightParams, Wind.Parameters windParams, out string lightPath, out string windPath)
+        {
+            const string cacheLocation = "cache";
+            var lightHash = xxHash3.Hash64(lightParams);
+            var windHash = xxHash3.Hash64(windParams);
+            lightPath = $"{Application.persistentDataPath}/{cacheLocation}/{terrain.name}.{lightHash.x:x}{lightHash.y:x}.bytes";
+            windPath = $"{Application.persistentDataPath}/{cacheLocation}/{terrain.name}.{windHash.x:x}{windHash.y:x}.bytes";
         }
         
         private unsafe (bool, bool) TryLoadCacheData(string lightPath, string windPath)
