@@ -21,36 +21,46 @@ namespace TFM.Components.Visualization
         [SerializeField] private Color terrain, cliff, snow;
         [SerializeField] [Range(0f, 1f)] private float overlayLerp;
         [SerializeField] private TextureId overlay;
-    
-        private doubleF _heightfield;
-        private double4F _snowfield;
+        
         public Dictionary<TextureId, Texture2D> _textures = new();
         
         private RenderParams _rp;
         private Mesh _mesh;
         
         private static readonly int TextureLerp = Shader.PropertyToID("_TextureLerp");
+        private static readonly int Snow = Shader.PropertyToID("Snow");
+        private static readonly int Overlay = Shader.PropertyToID("_Overlay");
+        private double4F _snowLayers;
+        private GraphicsBuffer _buffer;
+        private int _bufferLength;
 
-        private void Start()
+        private JobHandle jh = new ();
+
+        public void SetTerrain(doubleF height, double4F snow, bool enable = true)
         {
-            var sim = GetComponent<SimulationController>();
-            _heightfield = sim.Heightfield;
-            _snowfield = sim.Snowfield;
-            
+            _snowLayers = snow;
+            _bufferLength = _snowLayers.Length;
+            height.GenerateMesh(out Mesh.MeshDataArray mda, default).Complete();
+            Mesh.ApplyAndDisposeWritableMeshData(mda, _mesh);
+            _mesh.RecalculateBounds();
+            _buffer?.Dispose();
+            _buffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, GraphicsBuffer.UsageFlags.LockBufferForWrite, _bufferLength, sizeof(float));
+            _rp.matProps.SetBuffer(Snow, _buffer);
+            enabled = enable;
+        }
+
+        private void Awake()
+        {
             _rp = new RenderParams(material)
             {
                 matProps = new MaterialPropertyBlock()
             };
-
             _mesh = new Mesh();
-            
-            GenerateFinalMesh();
-            OnEnable();
+            enabled = false;
         }
 
         private void OnEnable()
         {
-            if (!_heightfield.IsCreated) return;
             RenderPipelineManager.beginContextRendering += RenderNonInstanced;
         }
 
@@ -61,18 +71,28 @@ namespace TFM.Components.Visualization
         
         private void RenderNonInstanced(ScriptableRenderContext scriptableRenderContext, List<Camera> cameras)
         {
-            GenerateFinalMesh();
             _rp.matProps.SetFloat(TextureLerp, overlayLerp);
             if (_textures.TryGetValue(overlay, out var texture))
-                _rp.matProps.SetTexture("_Overlay", texture);
+                _rp.matProps.SetTexture(Overlay, texture);
             Graphics.RenderMesh(_rp, _mesh, 0, Matrix4x4.Scale(math.float3(1f/100f)));
+            SyncSnow();
         }
         
-        private void GenerateFinalMesh()
+        private void SyncSnow()
         {
-            _heightfield.GenerateMesh(out Mesh.MeshDataArray mda, default, _snowfield).Complete();
-            Mesh.ApplyAndDisposeWritableMeshData(mda, _mesh);
-            _mesh.RecalculateBounds();
+            var array = _buffer.LockBufferForWrite<float>(0, _snowLayers.Length);
+            new SyncSnowJob { snow = _snowLayers, buffer = array }.ScheduleParallel(_snowLayers.Length, 64, jh).Complete();
+            _buffer.UnlockBufferAfterWrite<float>(_snowLayers.Length);
+        }
+
+        private struct SyncSnowJob : IJobFor
+        {
+            [ReadOnly] public double4F snow;
+            [WriteOnly] public NativeArray<float> buffer;
+            public void Execute(int index)
+            {
+                buffer[index] = (float)math.csum(snow[index]);
+            }
         }
 
 

@@ -14,7 +14,7 @@ using UnityEngine.Rendering;
 namespace TFM.Components.Visualization
 {
 
-    public class TerrainRenderer : MonoBehaviour
+    public class TerrainLayersRenderer : MonoBehaviour
     {
         [SerializeField] private bool drawTerrain = true;
         [SerializeField] private bool drawSnow = true;
@@ -71,12 +71,12 @@ namespace TFM.Components.Visualization
 
         private void Start()
         {
-            var sim = GetComponent<SimulationController>();
+            var sim = GetComponent<IRenderTerrain>();
             _heightfield = sim.Heightfield;
             _snowfield = sim.Snowfield;
             _selectedPoints = sim.SelectedPoints;
             _highlightedPoints = sim.HighlightedPoints;
-            _wind = sim.WindAltitude;
+            //_wind = sim.WindAltitude;
 
             kSizeLayer = _heightfield.dimension.x * _heightfield.dimension.y;
             kNumInstances = kSizeLayer * 5;
@@ -121,7 +121,6 @@ namespace TFM.Components.Visualization
 
         private void OnEnable()
         {
-            if (!_heightfield.IsCreated) return;
             RenderPipelineManager.beginContextRendering += RenderNonInstanced;
             RenderPipelineManager.beginContextRendering += TransferData;
         }
@@ -203,6 +202,8 @@ namespace TFM.Components.Visualization
         // TODO: Move to draw call for fun
         private void RenderNonInstanced(ScriptableRenderContext scriptableRenderContext, List<Camera> cameras)
         {
+            if (!_heightfield.IsCreated) return;
+            
             _rpHighlight.matProps.SetColor("_BaseColor", Color.green);
             foreach (var point in _highlightedPoints)
             {
@@ -279,6 +280,8 @@ namespace TFM.Components.Visualization
 
         private void TransferData(ScriptableRenderContext scriptableRenderContext, List<Camera> cameras)
         {
+            if (!_heightfield.IsCreated) return;
+            
             var cmj = new ComputeMatrices
             {
                 heightfield = _heightfield,
