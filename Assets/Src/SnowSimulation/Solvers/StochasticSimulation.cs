@@ -90,6 +90,8 @@ namespace TFM.Solvers
         public float simulationTime { get; private set; }
         public int simulationFrames { get; private set; }
         public EventId lastEventId { get; private set; }
+        
+        public bool RandomAvalanche { get; set; }
 
         public void SetEventPeriod(EventId eventId, float period)
         {
@@ -371,12 +373,19 @@ namespace TFM.Solvers
 
             if (cell == -1)
             {
-                var trigger = _rng.NextDouble() * _hazard[^1];
-                for (int i = 0; i < _hazard.Length; i++)
+                if (RandomAvalanche)
                 {
-                    if (_hazard[i] < trigger) continue;
-                    cell = i;
-                    break;
+                    cell = _rng.NextInt(_moving.Length);
+                }
+                else
+                {
+                    var trigger = _rng.NextDouble() * _hazard[^1];
+                    for (int i = 0; i < _hazard.Length; i++)
+                    {
+                        if (_hazard[i] < trigger) continue;
+                        cell = i;
+                        break;
+                    }
                 }
             }
 

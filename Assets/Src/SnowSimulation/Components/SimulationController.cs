@@ -166,8 +166,6 @@ namespace TFM.Components
 
         private void Awake()
         {
-            _renderer = GetComponent<TerrainMeshRenderer>();
-            
             _selectedPoints = new NativeHashSet<int>(10, Allocator.Persistent);
             _highlightedPoints = new NativeHashSet<int>(10, Allocator.Persistent);
 
@@ -189,7 +187,7 @@ namespace TFM.Components
                     [StochasticSimulation.EventId.AvalancheStep] = avalanche,
                     [StochasticSimulation.EventId.StabilityStep] = stability
                 },
-                UseSimpleMelt = simpleMelt
+                UseSimpleMelt = simpleMelt,
             };
             
             _simulation.Init(terrain, parameters);
@@ -298,6 +296,7 @@ namespace TFM.Components
             GUILayout.Label($"Cloud cover: {_simulation.Parameters.CloudCover}", style);
             GUILayout.Label($"Precipitation: {_simulation.Parameters.SnowfallIntensity * _simulation.Parameters.SnowfallStrength}", style);
             GUILayout.Label($"Wind speed: {_simulation.Parameters.WindSpeed}", style);
+            GUILayout.Label($"Fps: {1/Time.smoothDeltaTime}", style);
         }
 
         private void OnDestroy()
