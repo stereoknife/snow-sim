@@ -13,12 +13,12 @@ using static Unity.Mathematics.math;
 
 namespace TFM.Components
 {
-    [EditorTool("Simulation Tool", typeof(SimulationController))]
+    [EditorTool("Simulation Tool", typeof(EditorSimulationController))]
     public class SimulationTool : EditorTool, IDrawSelectedHandles
     {
         public override void OnWillBeDeactivated()
         {
-            (target as SimulationController)?.HighlightPoint(-1);
+            (target as EditorSimulationController)?.HighlightPoint(-1);
         }
 
         public override void OnToolGUI(EditorWindow window)
@@ -28,7 +28,7 @@ namespace TFM.Components
             
             var mousePos = Event.current.mousePosition;
             var ray = HandleUtility.GUIPointToWorldRay(mousePos);
-            var sim = target as SimulationController;
+            var sim = target as EditorSimulationController;
 
             if (sim == null) return;
 
