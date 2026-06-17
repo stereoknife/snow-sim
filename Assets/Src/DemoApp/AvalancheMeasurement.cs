@@ -17,7 +17,7 @@ using UnityEngine.InputSystem;
 
 namespace DemoApp
 {
-    public class AvalancheMeasurement : SimulationController
+    public class AvalancheMeasurement : EditorSimulationController
     {
         [SerializeField] private int measurements;
         [SerializeField] private bool resetAfterAvalanche;

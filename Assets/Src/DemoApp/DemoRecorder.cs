@@ -12,7 +12,7 @@ using UnityEngine.InputSystem;
 
 namespace DemoApp
 {
-    public class DemoRecorder : SimulationController
+    public class DemoRecorder : EditorSimulationController
     {
         [SerializeField] private Preset settings;
         [SerializeField] private string recordingName;
