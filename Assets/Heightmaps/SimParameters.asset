@@ -16,7 +16,7 @@ MonoBehaviour:
     x: 0
     y: 0
     z: 1
-    w: 0
+    w: 2
   loadFromCache: 1
   cacheLocation: cache
   seed: 1337
