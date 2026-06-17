@@ -25,6 +25,8 @@ namespace DemoApp
         private doubleF snowDiff, snowSnapshot;
         private float timeout = 20;
 
+        private string filename = "output";
+
 #if !UNITY_EDITOR
         private TerrainMeshRenderer _renderer;
 
@@ -36,16 +38,21 @@ namespace DemoApp
             {
                 if (args[i] == "--iters" && args.Length > i + 1)
                 {
-                    if (int.TryParse(args[i + 1], out var value)){
+                    if (int.TryParse(args[++i], out var value)){
                         measurements = value;
                     }
                 }
 
                 if (args[i] == "--to" && args.Length > i + 1)
                 {
-                    if (float.TryParse(args[i + 1], out var value)){
+                    if (float.TryParse(args[++i], out var value)){
                         timeout = value;
                     }
+                }
+
+                if (args[i] == "--o" && args.Length > i + 1)
+                {
+                    filename = args[++i];
                 }
             }
             Debug.Log($"{measurements} measurements");
@@ -156,8 +163,8 @@ namespace DemoApp
             JobHandle.CombineDependencies(pjh, njh).Complete();
             positiveTex.Apply(false, false);
             negativeTex.Apply(false,false);
-            File.WriteAllBytes($"{Application.persistentDataPath}/results/positiveDiff.png", positiveTex.EncodeToPNG());
-            File.WriteAllBytes($"{Application.persistentDataPath}/results/negativeDiff.png", negativeTex.EncodeToPNG());
+            File.WriteAllBytes($"{Application.persistentDataPath}/results/{filename}_pos.png", positiveTex.EncodeToPNG());
+            File.WriteAllBytes($"{Application.persistentDataPath}/results/{filename}_neg.png", negativeTex.EncodeToPNG());
             positiveDiff.Dispose();
             negativeDiff.Dispose();
         }

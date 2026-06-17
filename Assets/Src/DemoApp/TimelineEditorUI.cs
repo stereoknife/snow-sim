@@ -1,3 +1,4 @@
+using System;
 using DemoApp.UI;
 using ImGuiNET;
 using UImGui;
@@ -7,17 +8,23 @@ namespace DemoApp
 {
     public class TimelineEditorUI : MonoBehaviour
     {
-        private bool[] hoverEnter = new bool[366];
-        private float[] precip = new float[366];
-        private float[] cloud = new float[366];
-        private float[] wind = new float[366];
-
         private bool showValues;
         
         private bool useGaussian;
         private int gaussianSize;
-
         private float monthlyPrecip;
+
+        private DateTime _startDate = new (2000, 11, 1);
+        private DateTime _endDate = new (2001, 4, 30);
+        
+        private Calendar _precipCal, _cloudCal, _windCal;
+
+        private void Awake()
+        {
+            _precipCal = new (_startDate, _endDate);
+            _cloudCal = new (_startDate, _endDate);
+            _windCal = new (_startDate, _endDate);
+        }
 
         private void OnLayout(UImGui.UImGui obj)
         {
@@ -32,12 +39,12 @@ namespace DemoApp
             
             ImGui.NewLine();
             
-            var values = precip;
+            Calendar cal = _precipCal;
             if (ImGui.BeginTabBar("MyTabBar"))
             {
                 if (ImGui.BeginTabItem("Precipitation"))
                 {
-                    values = precip;
+                    cal = _precipCal;
                     ImGui.DragFloat("Monthly precipitation", ref monthlyPrecip);
                     ImGui.SameLine();
                     ImGui.Dummy(new Vector2(19, 19));
@@ -46,12 +53,12 @@ namespace DemoApp
                 }
                 if (ImGui.BeginTabItem("Cloud cover"))
                 {
-                    values = cloud;
+                    cal = _cloudCal;
                     ImGui.EndTabItem();
                 }
                 if (ImGui.BeginTabItem("Wind speed"))
                 {
-                    values = wind;
+                    cal = _windCal;
                     ImGui.EndTabItem();
                 }
             }
@@ -59,7 +66,9 @@ namespace DemoApp
             var spacing = 14f;
             var hMonths = (int)(ImGui.GetContentRegionAvail().x / (Calendar.Width + spacing / 2));
             hMonths = Mathf.Max(1, hMonths);
-            for (int i = 0; i < 5; i++)
+
+            var endMonth = 1 + _endDate.Month + (_endDate.Year - _startDate.Year) * 12 - _startDate.Month;
+            for (int i = 0; i < endMonth; i++)
             {
                 if (i % hMonths != 0)
                 {
@@ -67,7 +76,7 @@ namespace DemoApp
                     ImGui.Dummy(new (spacing, spacing));
                     ImGui.SameLine();
                 }
-                Calendar.Month(values, hoverEnter, i + 1, 2000, showValues);
+                cal.Month(i);
             }
             ImGui.EndTabBar();
             ImGui.End();

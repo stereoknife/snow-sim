@@ -59,9 +59,9 @@ namespace TFM.Simulation
             return hj.Schedule(JobHandle.CombineDependencies(ch, gh, rh));
         }
         
-        public static JobHandle Curvature(doubleF height, NativeArray<int> curvature, JobHandle dependsOn)
+        public static JobHandle Curvature(doubleF height, NativeArray<int> curvature, int windowSize, JobHandle dependsOn)
         {
-            var windowSize = 5;
+            //var windowSize = 5;
             var cj = new CurvatureJob
             {
                 curvatures = curvature,
@@ -84,9 +84,9 @@ namespace TFM.Simulation
             return gj.ScheduleParallel(height.Length, 64, dependsOn);
         }
         
-        public static JobHandle Roughness(doubleF height, doubleF roughness, JobHandle dependsOn)
+        public static JobHandle Roughness(doubleF height, doubleF roughness, int windowSize, JobHandle dependsOn)
         {
-            var windowSize = 5;//(int)round(100 * height.iCellSize.x);
+            //var windowSize = 3;//(int)round(100 * height.iCellSize.x);
             var rj = new RoughnessJob
             {
                 height = height,
@@ -258,7 +258,7 @@ namespace TFM.Simulation
                 var h = 0.0;
                 for (int i = 0; i < hazard.Length; i++)
                 {
-                    h += gradients[i] * roughness[i] * lut[curvatures[i]];
+                    h += gradients[i] /* * roughness[i]*/ * lut[curvatures[i]];
                     hazard[i] = h;
                 }
             }

@@ -245,6 +245,7 @@ namespace TFM.Simulation
             private double sunIntensity, cloudFiltering, albedo;
             private double heatCapacity, latentHeat, conductivity;
             private double testValue;
+            private int tempFunction;
 
             public MeltJob(double4F snow, doubleF illumination, doubleF height, double step, ref Parameters P)
             {
@@ -262,19 +263,28 @@ namespace TFM.Simulation
                 latentHeat = 333100 * 110;
                 conductivity = 0.05;
                 testValue = P.MeltVolumeFactor;
+                tempFunction = 2;
             }
             
             public void Execute(int index)
             {
+                var a = 0.1;
+                var b = testValue;
+                
                 // We assume snow temperature is air temperature if below 0 or 0 if above.
                 var s = snow[index];
                 var snowThickness = csum(s);
                 var airTemp = tempBase + (height[index] + snowThickness) * tempIncAltitude;
-                var snowTemp = min(0, testValue);
-                var airConduction = conductivity * (airTemp - snowTemp);
-                var neededRadiation = snowTemp * snowThickness * heatCapacity;
+                var snowTemp = tempFunction switch
+                {
+                    0 => min(airTemp, 0),
+                    1 => min(airTemp / testValue, 0),
+                    2 => min(a * (-3) / exp(-b*-3) * exp(-airTemp*b), 0)
+                };
+                var airConduction = conductivity * max(airTemp, 0);
+                var neededRadiation = -snowTemp * snowThickness * heatCapacity;
                 var solarRadiation = sunIntensity * illumination[index] * cloudFiltering * albedo;
-                var totalRadiation = solarRadiation + airConduction + neededRadiation;
+                var totalRadiation = solarRadiation + airConduction - neededRadiation;
                 var meltRate = totalRadiation * step / (latentHeat * snowThickness);
 
                 var melt = -saturate(meltRate) * snowThickness;
@@ -285,11 +295,6 @@ namespace TFM.Simulation
                 s.x += min(0, s.y);
                 s = select(s, 0, s < 0.001);
                 snow[index] = s;
-
-                if (index == 6239)
-                {
-                    //Debug.Log($"Air temp: {airTemp}\nSnow temp: {snowTemp}\nAir cond: {airConduction}\nNeeded radiation: {neededRadiation}\nSolar radiation: {solarRadiation}\nTotal radiation: {totalRadiation}\nMelt rate: {meltRate}");
-                }
             }
         }
         
@@ -800,6 +805,7 @@ namespace TFM.Simulation
                 var ij = Snow.cell(index);
                 if (any(ij <= 0 | ij >= Snow.dimension - 1)) return;
                 var moving = false;
+
                 var flow = Flow.ReinterpretLoad<double4>(index * kStride);
                 double4 nflow = 0;
                 

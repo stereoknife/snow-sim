@@ -7,35 +7,62 @@ using UnityEngine;
 
 namespace TFM.Components.Analysis
 {
-    public struct SimulationProfiler
+    public class SimulationProfiler
     {
-        public struct ProfilingRecord
+        public struct EventRecord
         {
             public StochasticSimulation.EventId eventId;
-            public float startTime, duration;
+            public float startTime;
+            public double duration;
             public int ord;
             
             public string CSV => $"{ord},{eventId.ToString()},{startTime},{duration}";
         }
+        
+        public struct AverageRecord
+        {
+            public StochasticSimulation.EventId eventId;
+            public double totalDuration, averageDuration;
+            public int numEvents;
+            
+            public string CSV => $"{eventId.ToString()} Average,{numEvents},{totalDuration},{averageDuration}";
+        }
 
         public int MaxCapacity, AllocationChunk;
-        public Dictionary<StochasticSimulation.EventId, List<ProfilingRecord>> records;
+
+        private bool fullRecordsValid = false;
+        private bool averageRecordsValid = false;
+        private readonly Dictionary<StochasticSimulation.EventId, List<EventRecord>> _records;
+        private List<EventRecord> _fullRecords;
+        private Dictionary<StochasticSimulation.EventId, AverageRecord> _averageRecords;
 
         public SimulationProfiler(int allocationChunk = 1024, int maxCapacity = -1)
         {
             MaxCapacity = maxCapacity * allocationChunk;
-            AllocationChunk = allocationChunk;
-            records = new Dictionary<StochasticSimulation.EventId, List<ProfilingRecord>>();
+            _fullRecords = new List<EventRecord>();
+            _averageRecords = new Dictionary<StochasticSimulation.EventId, AverageRecord>();
+            _records = new Dictionary<StochasticSimulation.EventId, List<EventRecord>>();
             foreach (StochasticSimulation.EventId value in Enum.GetValues(typeof(StochasticSimulation.EventId)))
             {
-                records[value] = new List<ProfilingRecord>(AllocationChunk);
+                _records[value] = new List<EventRecord>();
+            }
+            Clear();
+        }
+
+        public void Clear()
+        {
+            fullRecordsValid = averageRecordsValid = false;
+            foreach (var list in _records.Values)
+            {
+                list.Clear();
+                list.Capacity = AllocationChunk;
             }
         }
         
-        public void AddRecord(StochasticSimulation.EventId eventId, float startTime, float duration)
+        public void AddRecord(StochasticSimulation.EventId eventId, float startTime, double duration)
         {
-            var list = records[eventId];
-            list.Add(new ProfilingRecord{eventId = eventId, startTime = startTime, duration = duration, ord = list.Count });
+            var list = _records[eventId];
+            list.Add(new EventRecord{eventId = eventId, startTime = startTime, duration = duration, ord = list.Count });
 
             if (MaxCapacity > 0 && list.Count >= MaxCapacity + AllocationChunk)
             {
@@ -45,40 +72,65 @@ namespace TFM.Components.Analysis
             {
                 list.Capacity += AllocationChunk;
             }
+
+            fullRecordsValid = averageRecordsValid = false;
         }
         
-        public List<ProfilingRecord> Records(StochasticSimulation.EventId eventId) => records[eventId];
+        public List<EventRecord> Records(StochasticSimulation.EventId eventId) => _records[eventId];
         
-        public List<ProfilingRecord> AllRecords()
+        public List<EventRecord> AllRecords()
         {
-            var list = new List<ProfilingRecord>();
-            foreach (var record in records.Values)
+            if (fullRecordsValid) return _fullRecords;
+            
+            _fullRecords.Clear();
+            _fullRecords.Capacity = _records.Values.Sum(l => l.Count);
+            
+            foreach (var record in _records.Values)
             {
-                list.AddRange(record);
+                _fullRecords.AddRange(record);
             }
             
-            list.Sort((a, b) => Comparer<float>.Default.Compare(a.startTime, b.startTime));
+            _fullRecords.Sort((a, b) => Comparer<float>.Default.Compare(a.startTime, b.startTime));
             
-            for (int i = 0; i < list.Count; i++)
+            for (int i = 0; i < _fullRecords.Count; i++)
             {
-                var profilingRecord = list[i];
+                var profilingRecord = _fullRecords[i];
                 profilingRecord.ord = i;
-                list[i] = profilingRecord;
+                _fullRecords[i] = profilingRecord;
             }
+
+            fullRecordsValid = true;
             
-            return list;
+            return _fullRecords;
         }
         
-        public Dictionary<StochasticSimulation.EventId, float> Averages()
+        public Dictionary<StochasticSimulation.EventId, AverageRecord> Averages()
         {
-            var avg = new Dictionary<StochasticSimulation.EventId, float>();
-
-            foreach (var (ev, list) in records)
+            if (averageRecordsValid) return _averageRecords;
+            
+            _averageRecords.Clear();
+            foreach (var (ev, list) in _records)
             {
-                avg[ev] = list.Sum(record => record.duration) / list.Count;
+                var total = 0.0;
+                var num = 0;
+
+                foreach (var record in list)
+                {
+                    total += record.duration;
+                    num++;
+                }
+
+                _averageRecords[ev] = new AverageRecord
+                {
+                    totalDuration = total,
+                    numEvents = num,
+                    averageDuration = total / num,
+                    eventId = ev
+                };
             }
 
-            return avg;
+            averageRecordsValid = true;
+            return _averageRecords;
         }
         
         public void WriteToFile(string filename, bool writeData = true, bool writeAverage = false)
@@ -91,9 +143,9 @@ namespace TFM.Components.Analysis
                 writer.WriteLine(record.CSV);
             }
 
-            if (writeAverage) foreach (var (ev, avg) in Averages())
+            if (writeAverage) foreach (var (ev, record) in Averages())
             {
-                writer.WriteLine($"-1,{ev.ToString()} Average,-1,{avg}");
+                writer.WriteLine($"-1,{ev.ToString()} Average,-1,{record.averageDuration}");
             }
         }
     }

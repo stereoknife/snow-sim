@@ -4,18 +4,34 @@ using UnityEngine;
 
 namespace DemoApp.UI
 {
-    public static class Calendar
+    public class Calendar
     {
         private const int kdayWidth = 30;
         private const int kdayHeight = 20;
 
         public static float Width => kdayWidth * 7 + ImGui.GetStyle().ItemSpacing.x * 6;
+
+        public DateTime startDate;
+        public DateTime endDate;
         
-        public static void Month(float[] values, bool[] hoverEnter, int month, int year = 2000, bool printValues = false, bool fillPadding = false, DayOfWeek firstDayOfWeek = DayOfWeek.Monday)
+        public float[] values;
+        private bool[] hoverEnter;
+
+        public Calendar(DateTime startDate, DateTime endDate)
+        {
+            this.startDate = startDate;
+            this.endDate = endDate;
+            var len = (endDate - startDate).Days + 1;
+            values = new float[len];
+            hoverEnter = new bool[len];
+        }
+        
+        public void Month(int month, bool printValues = false, bool fillPadding = false, DayOfWeek firstDayOfWeek = DayOfWeek.Monday)
         {
             ImGui.BeginGroup();
-            var day = new DateTime(year, month, 1);
-            var firstDayAsIndex = day.DayOfYear - 1;
+            
+            var day = startDate.AddDays(1 - startDate.Day).AddMonths(month);
+            var firstDayAsIndex = (day - startDate).Days;
             ImGui.Text(day.ToString("MMM"));
             var dayOfWeek = day.DayOfWeek;
             while (day.DayOfWeek != firstDayOfWeek) day = day.AddDays(-1);
@@ -32,12 +48,15 @@ namespace DemoApp.UI
                 ImGui.Button($"{label}###m{month}d-{day.Day}", new Vector2(kdayWidth, kdayHeight));
             }
             ImGui.EndDisabled();
+
+            month = day.Month;
+            var year = day.Year;
             
             for (; day.Month == month; day = day.AddDays(1))
             {
                 var styles = 1;
                 if (day.DayOfWeek != DayOfWeek.Monday) ImGui.SameLine();
-                var i = day.DayOfYear;
+                var i = (day - startDate).Days;
                 ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(1f, 1f, 1f, values[i]));
                 if (printValues && values[i] > 0.499f)
                 {
@@ -45,8 +64,16 @@ namespace DemoApp.UI
                     styles++;
                 }
                 label = printValues ? $"{values[i] * 100f}%" : $"{day.Day}";
-                ImGui.Button($"{label}###m{month}d{day.Day}", new Vector2(30, 20));
-
+                if (ImGui.Button($"{label}###m{month}d{day.Day}", new Vector2(30, 20)))
+                {
+                    /*
+                    values[i] = Mathf.Clamp01(values[i] + 0.1f);
+                    if (ImGui.IsMouseClicked(ImGuiMouseButton.Left)) values[i] = Mathf.Clamp01(values[i] + 0.1f);
+                    if (ImGui.IsMouseClicked(ImGuiMouseButton.Right)) values[i] = Mathf.Clamp01(values[i] - 0.1f);
+                    */
+                }
+                
+                
                 if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenBlockedByActiveItem))
                 {
                     if (!hoverEnter[i])
@@ -66,10 +93,11 @@ namespace DemoApp.UI
                     hoverEnter[i] = false;
                 }
                 
+                
                 ImGui.PopStyleColor(styles);
             }
             ImGui.PushID(month);
-            ImGui.PlotHistogram("###hist", ref values[0], DateTime.DaysInMonth(2000, month), firstDayAsIndex, "", 0, 1, new Vector2(Width, 19));
+            ImGui.PlotHistogram("###hist", ref values[firstDayAsIndex], DateTime.DaysInMonth(year, month), 0, "", 0, 1, new Vector2(Width, 19));
             ImGui.PopID();
             ImGui.EndGroup();
         }
