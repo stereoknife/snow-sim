@@ -14,7 +14,7 @@ using noise = Unity.Mathematics.noise;
 
 namespace TFM.Components
 {
-    public class SimulationController : MonoBehaviour, IRenderTerrain
+    public class EditorSimulationController : MonoBehaviour, IRenderTerrain
     {
         [SerializeField] private SimulationTerrain terrain;
         [SerializeField] private SimulationParameters parameters;
@@ -41,10 +41,10 @@ namespace TFM.Components
         [SerializeField] private int frames;
         [SerializeField] protected float time;
 
-        private NativeList<double> _tempTimeline;
-        private NativeList<double> _cloudTimeline;
-        private NativeList<double> _windTimeline;
-        private NativeList<double> _precipTimeline;
+        private NativeList<float> _tempTimeline;
+        private NativeList<float> _cloudTimeline;
+        private NativeList<float> _windTimeline;
+        private NativeList<float> _precipTimeline;
 
         private NativeHashSet<int> _selectedPoints, _highlightedPoints;
 
@@ -99,13 +99,6 @@ namespace TFM.Components
                 snow[i] = initialSnowValue;
             }
             _simulation.Reset();
-        }
-        
-        [Button]
-        private void ExportProfilingData()
-        {
-            _simulation.ExportProfilingData(Path.Combine(Application.dataPath, "results", $"{outputFile}.csv"));
-            Debug.Log($"File written at {outputFile}.csv");
         }
 
         [Button]
@@ -191,7 +184,8 @@ namespace TFM.Components
                 UseSimpleMelt = simpleMelt,
             };
             
-            _simulation.Init(terrain, parameters);
+            _simulation.Init(terrain);
+            _simulation.Generate(parameters.WindParameters, parameters.LightingParameters, parameters.loadFromCache, parameters.seed);
             
             _tempTimeline = _simulation.TempTimeline;
             _cloudTimeline = _simulation.CloudTimeline;
@@ -213,11 +207,6 @@ namespace TFM.Components
             GenerateTemperatureTimeline();
             GenerateCloudPrecipTimelines();
             GenerateWindTimeline();
-
-            if (enableProfiling)
-                _simulation.EnableProfiling(bufferSize);
-            else
-                _simulation.DisableProfiling();
         }
         
         private void SetSimulationParams()
@@ -234,11 +223,6 @@ namespace TFM.Components
             _simulation.UsePrecipTimeline = precipitationTimeline;
             _simulation.UseTempTimeline = temperatureTimeline;
             _simulation.UseWindTimeline = windTimeline;
-            
-            if (enableProfiling)
-                _simulation.EnableProfiling(bufferSize);
-            else
-                _simulation.DisableProfiling();
         }
 
         private void OnValidate()
@@ -273,7 +257,7 @@ namespace TFM.Components
             for (int i = 0; i < _cloudTimeline.Length; i++)
             {
                 _cloudTimeline[i] = noise.cnoise(float2(-420f, i / 5f)) / 2f + 0.5f;
-                _precipTimeline[i] = saturate(unlerp(0.7, 1, _cloudTimeline[i])) * 0.005f;
+                _precipTimeline[i] = saturate(unlerp(0.7f, 1, _cloudTimeline[i])) * 0.005f;
             }
         }
 
