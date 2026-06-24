@@ -219,7 +219,7 @@ namespace DemoApp
         private void GeneratePrecip()
         {
             var array = _precipCal.Array;
-            var chance = remap(0f, 1f, 0.1f, 0.9f, _precipChance);
+            var chance = unlerp(-PI/2, PI/2, asin(2 * _precipChance - 1));
 
             float daysOver0 = 0f;
             for (int i = 0; i < array.Length; i++)

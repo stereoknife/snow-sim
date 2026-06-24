@@ -118,7 +118,7 @@ namespace TFM.Simulation
             => new SnowfallJob(snow, height, illumination, step, ref P)
                 .ScheduleParallel(snow.Length, 512, dependsOn);
 
-       // [BurstCompile]
+        [BurstCompile]
         private struct SnowfallJob : IJobFor
         {
             [NativeDisableParallelForRestriction] public double4F snow;
@@ -235,6 +235,8 @@ namespace TFM.Simulation
             => new MeltJob(snow, illumination, height, step, ref P)
                 .ScheduleParallel(snow.Length, 256, dependsOn);
 
+        
+        [BurstCompile]
         private struct MeltJob : IJobFor
         {
             private double4F snow;
@@ -275,12 +277,19 @@ namespace TFM.Simulation
                 var s = snow[index];
                 var snowThickness = csum(s);
                 var airTemp = tempBase + (height[index] + snowThickness) * tempIncAltitude;
+                var tempFixed = min(airTemp, 0);
+                var tempProp = min(airTemp / testValue, 0);
+                var tempNorm = min(a * (-3) / exp(-b * -3) * exp(-airTemp * b), 0);
+                var snowTemp = select(select(tempProp, tempFixed, tempFunction == 0), tempNorm, tempFunction == 3);
+                
+                /*
                 var snowTemp = tempFunction switch
                 {
                     0 => min(airTemp, 0),
                     1 => min(airTemp / testValue, 0),
                     2 => min(a * (-3) / exp(-b*-3) * exp(-airTemp*b), 0)
                 };
+                */
                 var airConduction = conductivity * max(airTemp, 0);
                 var neededRadiation = -snowTemp * snowThickness * heatCapacity;
                 var solarRadiation = sunIntensity * illumination[index] * cloudFiltering * albedo;
@@ -405,7 +414,7 @@ namespace TFM.Simulation
             return dependsOn;
         }
 
-        //[BurstCompile]
+        [BurstCompile]
         private struct DiffusionJob : IJobFor
         {
             [NativeDisableParallelForRestriction] public double4F snow;
@@ -507,6 +516,7 @@ namespace TFM.Simulation
             return dependsOn;
         }
 
+        [BurstCompile]
         private struct TransportJob : IJobFor
         {
             [NativeDisableParallelForRestriction] public double4F snow;
@@ -555,7 +565,7 @@ namespace TFM.Simulation
                 var w = abs(wind[index]);
                 var curv = max(dot(w, snowGrad2), 0);
                 var d = snow[index];
-                var snowAmt = csum(d);
+                var snowAmt = d.w;//csum(d);
                 var windAltitude = lerp(windAltLow[index], windAltHigh[index], windLerp);
 
                 curv = select(curv, 0, windAltitude > height[index] + snowAmt);

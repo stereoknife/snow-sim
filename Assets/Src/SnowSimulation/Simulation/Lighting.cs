@@ -41,9 +41,9 @@ namespace TFM.Simulation
 
             public static Parameters Default => new()
             {
-                IntensityDirect = 1,
-                IntensityAmbient = 1,
-                IntensityIndirect = 1,
+                IntensityDirect = 0.9,
+                IntensityAmbient = 0.1,
+                IntensityIndirect = 0.9,
                 DirectLatitude = 0,
                 DirectStartingDay = 0,
                 DirectEndDay = 365,
