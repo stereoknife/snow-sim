@@ -11,9 +11,12 @@ EditorBuildSettings:
   - enabled: 0
     path: Assets/Scenes/AvalancheMeasuring.unity
     guid: 014d8e3ec5a032740b62e9d69e8e97d3
+  - enabled: 0
+    path: Assets/Scenes/ImageCapture.unity
+    guid: af8a5a96543215f45883f550805cd2f1
   - enabled: 1
     path: Assets/Scenes/PerformanceMeasuring.unity
-    guid: af8a5a96543215f45883f550805cd2f1
+    guid: 91004adb807c3f641840b33029dc796e
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   m_UseUCBPForAssetBundles: 0

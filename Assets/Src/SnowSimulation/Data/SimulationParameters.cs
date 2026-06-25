@@ -38,6 +38,14 @@ namespace TFM.SnowSimulation.Data
         [SerializeField] public double surfaceSpeedIncrement = Wind.Parameters.Default.SurfaceSpeedIncrement;
         [SerializeField] public int gaussianKernelSize = Wind.Parameters.Default.GaussianKernelSize;
 
+        [Header("Timelines")]
+        [SerializeField] public float precipChance = 0.5f;
+        [SerializeField] public float avgWindSpeed = 3;
+        [SerializeField] public float windSpeedRange = 3;
+        [SerializeField] public float maxTemp = 21;
+        [SerializeField] public float minTemp = -3;
+        [SerializeField] public int minTempDay = 15;
+
         public Lighting.Parameters LightingParameters => new()
         {
             IntensityDirect = directIntensity,
@@ -57,7 +65,7 @@ namespace TFM.SnowSimulation.Data
         
         public Wind.Parameters WindParameters => new()
         {
-            WindDirection = new double2(math.cos(math.radians(windHeading)), math.sin(math.radians(windHeading))),
+            WindDirection = new double2(-math.sin(math.radians(windHeading)), -math.cos(math.radians(windHeading))),
             VenturiIntensity = venturiIntensity,
             DeflectionIntensity = deflectionIntensity,
             SurfaceFalloff = surfaceFalloff,

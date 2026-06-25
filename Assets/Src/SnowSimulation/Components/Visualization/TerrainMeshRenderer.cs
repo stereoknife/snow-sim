@@ -38,6 +38,11 @@ namespace TFM.Components.Visualization
 
         public void SetTerrain(doubleF height, double4F snow, bool enable = true)
         {
+            _mesh = new Mesh();
+            _rp = new RenderParams(material)
+            {
+                matProps = new MaterialPropertyBlock()
+            };
             _snowLayers = snow;
             _bufferLength = _snowLayers.Length;
             height.GenerateMesh(out Mesh.MeshDataArray mda, default).Complete();
@@ -47,16 +52,6 @@ namespace TFM.Components.Visualization
             _buffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, GraphicsBuffer.UsageFlags.LockBufferForWrite, _bufferLength, sizeof(float));
             _rp.matProps.SetBuffer(Snow, _buffer);
             enabled = enable;
-        }
-
-        private void Awake()
-        {
-            _rp = new RenderParams(material)
-            {
-                matProps = new MaterialPropertyBlock()
-            };
-            _mesh = new Mesh();
-            enabled = false;
         }
 
         private void OnEnable()

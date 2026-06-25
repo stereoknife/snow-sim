@@ -583,8 +583,7 @@ namespace TFM.Simulation
 
             public void Execute(int index)
             {
-                output[index] = (direct[index] * directFactor + ambient[index] * ambientFactor + indirect[index] * indirectFactor)
-                                / (indirectFactor + ambientFactor + directFactor);
+                output[index] = direct[index] * directFactor + ambient[index] * ambientFactor + indirect[index] * indirectFactor;
             }
         }
         

@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3050e33074cc4a26b85e06a225844cd6, type: 3}
+  m_Name: NuriaParameters
+  m_EditorClassIdentifier: SnowSimulation::TFM.SnowSimulation.Data.SimulationParameters
+  initialSnowValue:
+    x: 0
+    y: 0
+    z: 1
+    w: 0
+  loadFromCache: 1
+  cacheLocation: cache
+  seed: 1337
+  directIntensity: 0.9
+  ambientIntensity: 0.1
+  indirectIntensity: 0.9
+  latitude: 42.5
+  fromDate:
+    x: 1
+    y: 11
+  toDate:
+    x: 30
+    y: 4
+  daysBetweenSamples: 7
+  hoursBetweenSamples: 2
+  angularSamples: 32
+  distanceSamples: 50
+  maxDistance: 50
+  windHeading: 326
+  venturiIntensity: 0.001
+  deflectionIntensity: 0.5
+  surfaceFalloff: 0.7
+  surfaceMaxIterations: 500
+  surfaceSamples: 10
+  surfaceSpeedIncrement: 1
+  gaussianKernelSize: 1
+  precipChance: 0.35
+  avgWindSpeed: 3
+  windSpeedRange: 3
+  maxTemp: 30
+  minTemp: -2
+  minTempDay: 15

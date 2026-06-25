@@ -426,7 +426,6 @@ GameObject:
   - component: {fileID: 766846663}
   - component: {fileID: 766846666}
   - component: {fileID: 766846665}
-  - component: {fileID: 766846667}
   m_Layer: 0
   m_Name: IMGUI
   m_TagString: Untagged
@@ -531,18 +530,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8294980549ae24b69ac0f30e3ede0df6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SimulationSettingsUI
---- !u!114 &766846667
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 766846662}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: cee6584b81a44de09d855022b163f678, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::DemoApp.TimelineEditorUI
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0
@@ -713,7 +700,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1394619227}
-  - component: {fileID: 1394619236}
+  - component: {fileID: 1394619235}
   - component: {fileID: 1394619234}
   - component: {fileID: 1394619233}
   m_Layer: 0
@@ -778,7 +765,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1394619225}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: e8d1bed610b6c4582bf166ec48cfceb5, type: 3}
   m_Name: 
@@ -790,7 +777,7 @@ MonoBehaviour:
   snow: {r: 0, g: 0, b: 0, a: 0}
   overlayLerp: 0
   overlay: 0
---- !u!114 &1394619236
+--- !u!114 &1394619235
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -802,30 +789,32 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 541f867b1d5742969beb981f35eb7360, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DemoApp.PerformanceMeasurement
-  terrain: {fileID: 11400000, guid: 8e7252b7d27344182a1800e661b09408, type: 2}
+  terrain: {fileID: 11400000, guid: a0981e0acea4b134e9185464ff8e5cc9, type: 2}
   parameters: {fileID: 11400000, guid: 7af48a64b6317420888f8a48d093c9c0, type: 2}
   initialSnowValue:
     x: 0
     y: 0
     z: 0
     w: 0
-  volFactor: 10
+  volFactor: 0
+  showData: 1
   snowfall: 1
   windTransport: 1
   melting: 1
   stability: 1
   powderDiffusion: 1
   avalanche: 1
-  simpleMelt: 1
+  simpleMelt: 0
   temperatureTimeline: 1
-  precipitationTimeline: 0
-  windTimeline: 0
-  cloudCoverTimeline: 0
-  enableProfiling: 1
+  precipitationTimeline: 1
+  windTimeline: 1
+  cloudCoverTimeline: 1
+  enableProfiling: 0
   outputFile: 
   bufferSize: 0
   frames: 0
   time: 0
+  screenshotPath: 
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

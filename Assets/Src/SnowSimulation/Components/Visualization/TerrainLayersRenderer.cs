@@ -76,7 +76,7 @@ namespace TFM.Components.Visualization
             _snowfield = sim.Snowfield;
             _selectedPoints = sim.SelectedPoints;
             _highlightedPoints = sim.HighlightedPoints;
-            //_wind = sim.WindAltitude;
+            _wind = sim.WindAltitude;
 
             kSizeLayer = _heightfield.dimension.x * _heightfield.dimension.y;
             kNumInstances = kSizeLayer * 5;
@@ -116,9 +116,9 @@ namespace TFM.Components.Visualization
             
             GenerateWindMesh();
             GenerateFinalMesh();
-            OnEnable();
         }
 
+        /*
         private void OnEnable()
         {
             RenderPipelineManager.beginContextRendering += RenderNonInstanced;
@@ -130,6 +130,7 @@ namespace TFM.Components.Visualization
             RenderPipelineManager.beginContextRendering -= RenderNonInstanced;
             RenderPipelineManager.beginContextRendering -= TransferData;
         }
+        */
 
         private void AllocateInstanceDateBuffer()
         {
@@ -200,7 +201,7 @@ namespace TFM.Components.Visualization
         }
 
         // TODO: Move to draw call for fun
-        private void RenderNonInstanced(ScriptableRenderContext scriptableRenderContext, List<Camera> cameras)
+        private void RenderNonInstanced()
         {
             if (!_heightfield.IsCreated) return;
             
@@ -278,7 +279,7 @@ namespace TFM.Components.Visualization
             _finalMesh.RecalculateBounds();
         }
 
-        private void TransferData(ScriptableRenderContext scriptableRenderContext, List<Camera> cameras)
+        private void LateUpdate()
         {
             if (!_heightfield.IsCreated) return;
             
@@ -305,7 +306,8 @@ namespace TFM.Components.Visualization
             BatchCullingOutput cullingOutput,
             IntPtr userContext)
         {
-
+            RenderNonInstanced();
+            
             int alignment = UnsafeUtility.AlignOf<long>();
             
             var drawCommands = (BatchCullingOutputDrawCommands*)cullingOutput.drawCommands.GetUnsafePtr();

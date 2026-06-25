@@ -20,6 +20,7 @@ namespace TFM.Components
         [SerializeField] private SimulationParameters parameters;
         [SerializeField] protected double4 initialSnowValue;
         [SerializeField] private float volFactor;
+        [SerializeField] private bool showData;
         [Header("Events")]
         [SerializeField] private bool snowfall;
         [SerializeField] private bool windTransport;
@@ -40,6 +41,7 @@ namespace TFM.Components
         [Header("Run parameters")]
         [SerializeField] private int frames;
         [SerializeField] protected float time;
+        [SerializeField] private string screenshotPath;
 
         private NativeList<float> _tempTimeline;
         private NativeList<float> _cloudTimeline;
@@ -115,6 +117,12 @@ namespace TFM.Components
                     _simulation.TriggerAvalanche(point);
                 }
             }
+        }
+
+        [Button]
+        private void TakeScreenshot()
+        {
+            ScreenCapture.CaptureScreenshot($"{Application.persistentDataPath}/results/{screenshotPath}.png");
         }
 
         private IEnumerator RunSimulationCR()
@@ -224,6 +232,7 @@ namespace TFM.Components
             _simulation.Enabled[StochasticSimulation.EventId.SnowfallEnd] = snowfall;
             _simulation.Enabled[StochasticSimulation.EventId.AvalancheStart] = avalanche;
             _simulation.Enabled[StochasticSimulation.EventId.AvalancheStep] = avalanche;
+            _simulation.Enabled[StochasticSimulation.EventId.StabilityStep] = stability;
             _simulation.UseCloudTimeline = cloudCoverTimeline;
             _simulation.UsePrecipTimeline = precipitationTimeline;
             _simulation.UseTempTimeline = temperatureTimeline;
@@ -239,19 +248,19 @@ namespace TFM.Components
         {
             // Temperature follows a sin curve starting between spring equinox and summer solstice
             // a * sin(b * (x - c)) + d
-            var maxTemp = 30f;
-            var minTemp = -3;
+            var maxTemp = parameters.maxTemp;
+            var minTemp = parameters.minTemp;
             
             var a = (maxTemp - minTemp) / 2f;
             var b = PI2 / 365f;
-            var c = -10f;
+            var c = parameters.minTempDay;
             var d = (maxTemp + minTemp) / 2f;
 
             var startDay = parameters.LightingParameters.DirectStartingDay;
             minDay = 0;
             for (int i = 0; i < _tempTimeline.Length; i++)
             {
-                _tempTimeline[i] = a * sin(b * (i + startDay - c) - PI * 5f/8f) + d;
+                _tempTimeline[i] = a * sin(b * (i - c) - PI) + d;
                 if (i > 0 && _tempTimeline[i] < _tempTimeline[i - 1]) minDay = i;
             }
             Debug.Log($"min day {minDay}");
@@ -259,10 +268,21 @@ namespace TFM.Components
 
         private void GenerateCloudPrecipTimelines()
         {
+            var chance = unlerp(-PI/2, PI/2, asin(2 * parameters.precipChance - 1));
+
+            // Precip
+            for (int i = 0; i < _precipTimeline.Length; i++)
+            {
+                var val = noise.cnoise(float2(0.5f, i * 0.3f)) * 0.5f + 0.5f - (1f - chance);
+                if (i > 175) val = 0;
+                _precipTimeline[i] = max(0, val);
+            }
+            
+            // Cloud
             for (int i = 0; i < _cloudTimeline.Length; i++)
             {
-                _cloudTimeline[i] = noise.cnoise(float2(-420f, i / 5f)) / 2f + 0.5f;
-                _precipTimeline[i] = saturate(unlerp(0.7f, 1, _cloudTimeline[i])) * 0.005f;
+                var val = noise.cnoise(float2(0.5f, i * 0.3f)) * 0.5f + 0.5f;
+                _cloudTimeline[i] = val;
             }
         }
 
@@ -270,15 +290,21 @@ namespace TFM.Components
         {
             var maxWindSpeed = parameters.WindParameters.SurfaceSpeedIncrement *
                                parameters.WindParameters.SurfaceSamples;
+
+            var meanSpeed = parameters.avgWindSpeed;
+            var range = parameters.windSpeedRange;
+            
             for (int i = 0; i < _windTimeline.Length; i++)
             {
-                _windTimeline[i] = 8f;//(noise.cnoise(float2(i / 2f, -20f)) + 1f) / 2f * maxWindSpeed;
+                var val = noise.cnoise(float2(0.5f, i * 0.3f)) * 0.5f + 0.5f;
+                _windTimeline[i] = clamp(0, (float)maxWindSpeed, lerp(meanSpeed-range, meanSpeed+range, val));
             }
         }
         
 
         private void OnGUI()
         {
+            if (!showData) return;
             var t = _simulation.simulationTime;
             var style = new GUIStyle { fontSize = 20 };
             GUILayout.Label($"Simulation time: {t}", style);
@@ -296,5 +322,9 @@ namespace TFM.Components
             _highlightedPoints.Dispose();
             _simulation.Dispose();
         }
+        
+        /*
+         * UnityEditor.TransformWorldPlacementJSON:{"position":{"x":21.697372436523439,"y":13.431367874145508,"z":14.511293411254883},"rotation":{"x":-0.0968356654047966,"y":0.5146143436431885,"z":-0.05863318219780922,"w":-0.8499159216880798},"scale":{"x":1.0,"y":1.0,"z":1.0}}
+         */
     }
 }

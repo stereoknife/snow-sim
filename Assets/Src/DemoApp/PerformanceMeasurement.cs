@@ -23,14 +23,17 @@ namespace DemoApp
         IEnumerator Record()
         {
             var start = DateTime.Now;
+            var frames = 0;
             while(runSim && _simulation.simulationTime < time)
             {
                 _simulation.Step();
+                frames++;
                 yield return null;
             }
             var end = DateTime.Now;
             
             Debug.Log($"Duration: {(end - start).TotalSeconds} seconds");
+            Debug.Log($"Fps: {frames/(end - start).TotalSeconds}");
             
             var file = $"{Application.persistentDataPath}/results/profiling.csv";
             _simulation.Profiler.WriteToFile(file, false, true);

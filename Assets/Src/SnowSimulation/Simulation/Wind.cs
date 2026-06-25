@@ -36,18 +36,6 @@ namespace TFM.Simulation
                 SurfaceSpeedIncrement = 10,
                 GaussianKernelSize = 10,
             };
-
-            public int Hash()
-            {
-                var hash = new HashCode();
-                hash.Add(VenturiIntensity);
-                hash.Add(DeflectionIntensity);
-                hash.Add(SurfaceFalloff);
-                hash.Add(SurfaceMaxIterations);
-                hash.Add(SurfaceSamples);
-                hash.Add(SurfaceSpeedIncrement);
-                return hash.ToHashCode();
-            }
         }
         
         #region Venturi

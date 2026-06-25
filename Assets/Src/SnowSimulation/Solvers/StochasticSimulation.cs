@@ -15,6 +15,7 @@ using Unity.Serialization.Binary;
 using UnityEngine;
 using Random = Unity.Mathematics.Random;
 using static Unity.Mathematics.math;
+using noise = Unity.Mathematics.noise;
 using Terrain = TFM.Simulation.Terrain;
 
 namespace TFM.Solvers
@@ -259,7 +260,7 @@ namespace TFM.Solvers
             _frequencies[EventId.AvalancheStep] = 0f;
             if (UsePrecipTimeline) _frequencies[EventId.SnowfallStart] = 0f;
 
-            _parameters.CloudCover = 0;
+            _parameters.TempBase = 5f;
         }
         
         public void SetSnow(double4 value)
@@ -311,8 +312,17 @@ namespace TFM.Solvers
                 _parameters.TempBase = lerp(_tempTimeline[low], _tempTimeline[high], t);
             if (UseWindTimeline)
                 _parameters.WindSpeed = lerp(_windTimeline[low], _windTimeline[high], t);
+            else
+                //_parameters.WindSpeed = noise.cnoise(float2(0.5f, simulationTime * 0.5f)) * 4f + 3f;
+                _parameters.WindSpeed = 10f;
+
+
             if (UseCloudTimeline)
                 _parameters.CloudCover = lerp(_cloudTimeline[low], _cloudTimeline[high], t);
+            else
+                //_parameters.CloudCover = noise.cnoise(float2(0.5f, simulationTime)) * 0.5f + 0.5f;
+                _parameters.CloudCover = 0f;
+            
             if (UsePrecipTimeline)
             {
                 _parameters.SnowfallIntensity = lerp(_precipTimeline[low], _precipTimeline[high], t);
@@ -321,6 +331,8 @@ namespace TFM.Solvers
                 else
                     _frequencies[EventId.SnowfallStep] = 0f;
             }
+            
+            Debug.Log($"Melt fn: {_parameters.MeltTestFunction}");
 
             var ev = lastEventId = Next(out var dt);
             var jh = new JobHandle();

@@ -30,6 +30,8 @@ namespace TFM.Components
 
         public doubleF Heightfield => _height;
         public double4F Snowfield => _snow;
+        public ScalarField2D WindAltitude { get; }
+
         public NativeHashSet<int> SelectedPoints { get; }
         public NativeHashSet<int> HighlightedPoints { get; }
         

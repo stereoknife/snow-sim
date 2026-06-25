@@ -66,6 +66,10 @@ namespace TFM.Simulation
             [HideInInspector] public double WindSpeed;
             [HideInInspector] public double CloudCover;
             [HideInInspector] public double SnowfallIntensity;
+            
+            //Test
+            public int MeltTestFunction;
+            public float MeltExpA, MeltExpB, MeltConstTemp;
 
             public static Parameters Default => new()
             {
@@ -76,7 +80,7 @@ namespace TFM.Simulation
                 
                 TemperatureIncreasePerMetre = -0.01,
                 TemperatureIncreasePerSunlight = 10,
-                SnowfallStrength = 0.001,
+                SnowfallStrength = 0.015,
                 SnowfallMax = 1000,
                 SnowfallPowderRatio = 5,
                 SnowfallUnstableRatio = 1,
@@ -85,7 +89,11 @@ namespace TFM.Simulation
                 CriticalSlopeMaxTemp = -10,
                 MeltRate = 0.01,
                 MeltTemp = 0,
-                MeltVolumeFactor = 0,
+                MeltVolumeFactor = 4,
+                MeltTestFunction = 2,
+                MeltExpA = 0.001f,
+                MeltExpB = 1f,
+                MeltConstTemp = 0.0008f,
                 StabilityMinSlope = 0.3,
                 StabilityStableTemp = -5,
                 StabilityUnstableTemp = 5,
@@ -97,7 +105,7 @@ namespace TFM.Simulation
                 DiffusionRestSlope = 0.5,
                 DiffusionRate = 0.5,
                 WindPlates = 0.1,
-                WindErosionRate = 0.1,
+                WindErosionRate = 1,
                 WindSpeedPerLayer = 1,
                 WindMaxSpeed = 10,
                 AvalancheSnowDensity = 0.5,
@@ -118,7 +126,7 @@ namespace TFM.Simulation
             => new SnowfallJob(snow, height, illumination, step, ref P)
                 .ScheduleParallel(snow.Length, 512, dependsOn);
 
-       // [BurstCompile]
+        [BurstCompile]
         private struct SnowfallJob : IJobFor
         {
             [NativeDisableParallelForRestriction] public double4F snow;
@@ -235,6 +243,7 @@ namespace TFM.Simulation
             => new MeltJob(snow, illumination, height, step, ref P)
                 .ScheduleParallel(snow.Length, 256, dependsOn);
 
+        [BurstCompile]
         private struct MeltJob : IJobFor
         {
             private double4F snow;
@@ -244,8 +253,9 @@ namespace TFM.Simulation
             private double tempBase, tempIncAltitude;
             private double sunIntensity, cloudFiltering, albedo;
             private double heatCapacity, latentHeat, conductivity;
-            private double testValue;
+            private double volFactor;
             private int tempFunction;
+            private double a, b, constTemp;
 
             public MeltJob(double4F snow, doubleF illumination, doubleF height, double step, ref Parameters P)
             {
@@ -262,25 +272,26 @@ namespace TFM.Simulation
                 heatCapacity = 2090 * 110;
                 latentHeat = 333100 * 110;
                 conductivity = 0.05;
-                testValue = P.MeltVolumeFactor;
-                tempFunction = 2;
+                volFactor = P.MeltVolumeFactor;
+                tempFunction = P.MeltTestFunction;
+                a = P.MeltExpA;
+                b = P.MeltExpB;
+                constTemp = P.MeltConstTemp;
             }
             
             public void Execute(int index)
             {
-                var a = 0.1;
-                var b = testValue;
                 
                 // We assume snow temperature is air temperature if below 0 or 0 if above.
                 var s = snow[index];
                 var snowThickness = csum(s);
                 var airTemp = tempBase + (height[index] + snowThickness) * tempIncAltitude;
-                var snowTemp = tempFunction switch
-                {
-                    0 => min(airTemp, 0),
-                    1 => min(airTemp / testValue, 0),
-                    2 => min(a * (-3) / exp(-b*-3) * exp(-airTemp*b), 0)
-                };
+
+                var cons = min(constTemp, 0);
+                var prop = min(airTemp / volFactor, 0);
+                var norm = min(a * (-3) * exp(b * (-3-airTemp)), 0);
+                var snowTemp = select(select(norm, prop, tempFunction == 1), cons, tempFunction == 0);
+                
                 var airConduction = conductivity * max(airTemp, 0);
                 var neededRadiation = -snowTemp * snowThickness * heatCapacity;
                 var solarRadiation = sunIntensity * illumination[index] * cloudFiltering * albedo;
@@ -307,6 +318,7 @@ namespace TFM.Simulation
             => new StabilityJob(snow, illumination, height, step, ref P)
                 .ScheduleParallel(snow.Length, 256, dependsOn);
 
+        [BurstCompile]
         private struct StabilityJob : IJobFor
         {
             [NativeDisableParallelForRestriction] double4F snowF;
@@ -405,7 +417,7 @@ namespace TFM.Simulation
             return dependsOn;
         }
 
-        //[BurstCompile]
+        [BurstCompile]
         private struct DiffusionJob : IJobFor
         {
             [NativeDisableParallelForRestriction] public double4F snow;
@@ -507,6 +519,7 @@ namespace TFM.Simulation
             return dependsOn;
         }
 
+        [BurstCompile]
         private struct TransportJob : IJobFor
         {
             [NativeDisableParallelForRestriction] public double4F snow;
@@ -547,7 +560,7 @@ namespace TFM.Simulation
             {
                 int2 ij = snow.cell(index);
                 if ((ij.y * 2 + ij.x) % 5 != stage) return;
-                if (snow[index].w < 0.001) return;
+                //if (snow[index].w < 0.001) return;
                 
                 // 0.01 is wind_snow_terrain
                 var snowGrad2 = -field.gradient2(height, snow, index) * 0.01;
@@ -555,7 +568,7 @@ namespace TFM.Simulation
                 var w = abs(wind[index]);
                 var curv = max(dot(w, snowGrad2), 0);
                 var d = snow[index];
-                var snowAmt = csum(d);
+                var snowAmt = csum(d.yzw);
                 var windAltitude = lerp(windAltLow[index], windAltHigh[index], windLerp);
 
                 curv = select(curv, 0, windAltitude > height[index] + snowAmt);
@@ -572,12 +585,20 @@ namespace TFM.Simulation
                     erosion *= step;
                     var windNorm = w / csum(w);
                     var nd = snow[windNeighbour.x, ij.y];
-                    nd.w += erosion * windNorm.x;
+                    nd.y += erosion * windNorm.x;
                     snow[windNeighbour.x, ij.y] = nd;
                     nd = snow[ij.x, windNeighbour.y];
-                    nd.w += erosion * windNorm.y;
+                    nd.y += erosion * windNorm.y;
                     snow[ij.x, windNeighbour.y] = nd;
+                    /*/
                     d.w = max(d.w - erosion, 0);
+                    /*/
+                    d.y += -erosion;
+                    d.z += min(0, d.y);
+                    d.w += min(0, d.z);
+                    d = max(d, 0);
+                    //*/
+
                 }
                 
                 var stable = d.y + d.x;
