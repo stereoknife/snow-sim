@@ -222,11 +222,17 @@ namespace DemoApp
             var chance = unlerp(-PI/2, PI/2, asin(2 * _precipChance - 1));
 
             float daysOver0 = 0f;
+            float mx = 0f;
             for (int i = 0; i < array.Length; i++)
             {
                 var val = noise.cnoise(float2(0.5f, i * 0.3f)) * 0.5f + 0.5f - (1f - chance);
                 array[i] = max(0, val);
                 if (val >= 0) daysOver0++;
+                mx = max(mx, array[i]);
+            }
+            for (int i = 0; i < array.Length; i++)
+            {
+                array[i] = array[i] / mx * _precipAmt;
             }
             Debug.Log($"Precip days: {100 * daysOver0/array.Length}%");
         }

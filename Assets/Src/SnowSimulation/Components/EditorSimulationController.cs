@@ -207,6 +207,9 @@ namespace TFM.Components
             GenerateTemperatureTimeline();
             GenerateCloudPrecipTimelines();
             GenerateWindTimeline();
+
+            _renderer = GetComponent<TerrainMeshRenderer>();
+            _renderer.SetTerrain(Heightfield, Snowfield, true);
         }
         
         private void SetSimulationParams()

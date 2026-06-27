@@ -47,13 +47,21 @@ namespace DemoApp
         private int _selectedTerrain;
         private float _timeLimit;
 
+        private ParamsWindow _settings;
         private TimelineEditorUI _tl;
         private TerrainMeshRenderer _meshRenderer;
+
+        private string _renderers = "Mesh\0Layers";
+        private int _selectedRenderer;
+
+        private float toolRadius = 50f, toolStrength = 0.5f, toolSpeed = 0.01f;
+        
         // END
         
         private void Awake()
         {
             _tl = ui.GetComponent<TimelineEditorUI>();
+            _settings = ui.GetComponent<ParamsWindow>();
             _meshRenderer = GetComponent<TerrainMeshRenderer>();
             
             SelectedPoints = new NativeHashSet<int>(10, Allocator.Persistent);
@@ -106,7 +114,7 @@ namespace DemoApp
                 if(ImGui.BeginMenu("View"))
                 {
                     if (ImGui.MenuItem("Timeline editor")) _tl.enabled = true;
-                    ImGui.MenuItem("Simulation parameters");
+                    if (ImGui.MenuItem("Simulation parameters")) _settings.enabled = true;
                     ImGui.MenuItem("Performance analysis");
                     ImGui.EndMenu();
                 }
@@ -179,8 +187,18 @@ namespace DemoApp
             ImGui.EndTable();
             ImGui.Button("Set parameters");
             
+            ImGui.SeparatorText("Tools");
+            ImGui.Button("Add");
+            ImGui.SameLine();
+            ImGui.Button("Remove");
+            ImGui.SliderFloat("Radius", ref toolRadius, 10, 200);
+            ImGui.SliderFloat("Softness", ref toolStrength, 0, 1);
+            ImGui.SliderFloat("Snow added", ref toolSpeed, 0, 1);
+            
             ImGui.SeparatorText("Visualisation");
-            //ImGui.Selectable();
+            ImGui.RadioButton("Mesh", ref _selectedRenderer, 0);
+            ImGui.SameLine();
+            ImGui.RadioButton("Layers", ref _selectedRenderer, 1);
                 
             ImGui.End();
         }

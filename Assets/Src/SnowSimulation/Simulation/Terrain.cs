@@ -258,7 +258,7 @@ namespace TFM.Simulation
                 var h = 0.0;
                 for (int i = 0; i < hazard.Length; i++)
                 {
-                    h += gradients[i] /* * roughness[i]*/ * lut[curvatures[i]];
+                    h += gradients[i] * roughness[i] * lut[curvatures[i]];
                     hazard[i] = h;
                 }
             }

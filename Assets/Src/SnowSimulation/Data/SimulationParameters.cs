@@ -25,7 +25,7 @@ namespace TFM.SnowSimulation.Data
         [SerializeField][Range(1, 24)] public int hoursBetweenSamples = Lighting.Parameters.Default.DirectHoursBetweenSamples;
         
         [SerializeField][Range(1, 32)] public int angularSamples = Lighting.Parameters.Default.IndirectAngularSamples;
-        [SerializeField][Range(1, 50)] public int distanceSamples = Lighting.Parameters.Default.IndirectDistanceSamples;
+        [SerializeField][Range(1, 100)] public int distanceSamples = Lighting.Parameters.Default.IndirectDistanceSamples;
         [SerializeField][Range(1, 500)] public double maxDistance = Lighting.Parameters.Default.IndirectMaxDistance;
 
         [Header("Wind")]

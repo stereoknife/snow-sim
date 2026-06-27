@@ -545,6 +545,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DemoApp.ParamsWindow
   show: 1
+  _control: {fileID: 1394619235}
 --- !u!114 &766846671
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -552,7 +553,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 766846662}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 5a8ba380afa4c43c9aa8b2bffb19ff49, type: 3}
   m_Name: 
@@ -736,6 +737,7 @@ GameObject:
   - component: {fileID: 1394619233}
   - component: {fileID: 1394619237}
   - component: {fileID: 1394619236}
+  - component: {fileID: 1394619238}
   m_Layer: 0
   m_Name: Terrain
   m_TagString: Untagged
@@ -770,8 +772,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1ba28e47ac734a06b6f5c549bbf4f8f4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: SnowSimulation::TFM.TerrainRenderer
-  drawTerrain: 1
-  drawSnow: 1
+  drawTerrain: 0
+  drawSnow: 0
   drawWind: 0
   drawFinal: 0
   windLevel: 0
@@ -834,7 +836,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1394619225}
-  m_Enabled: 1
+  m_Enabled: 0
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 72582d3979f64f9dba629d1b900896da, type: 3}
   m_Name: 
@@ -852,6 +854,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cee6584b81a44de09d855022b163f678, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DemoApp.TimelineEditorUI
+--- !u!114 &1394619238
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1394619225}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4bb1a32c9012043a495d504940de4a49, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: '::'
+  filename: filltool
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -859,6 +874,6 @@ SceneRoots:
   - {fileID: 330585546}
   - {fileID: 410087041}
   - {fileID: 832575519}
-  - {fileID: 1394619227}
   - {fileID: 840471820}
   - {fileID: 766846664}
+  - {fileID: 1394619227}

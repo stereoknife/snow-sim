@@ -434,7 +434,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!114 &766846663
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -544,7 +544,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: cee6584b81a44de09d855022b163f678, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DemoApp.TimelineEditorUI
-  Show: 0
 --- !u!114 &766846670
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -558,6 +557,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DemoApp.ParamsWindow
   show: 1
+  _control: {fileID: 0}
 --- !u!1 &832575517
 GameObject:
   m_ObjectHideFlags: 0
@@ -760,13 +760,13 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1394619225}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 1ba28e47ac734a06b6f5c549bbf4f8f4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: SnowSimulation::TFM.TerrainRenderer
-  drawTerrain: 1
-  drawSnow: 1
+  drawTerrain: 0
+  drawSnow: 0
   drawWind: 0
   drawFinal: 0
   windLevel: 0
@@ -817,7 +817,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f3c970d7c6a2408db7aff809efd2d1fc, type: 3}
   m_Name: 
   m_EditorClassIdentifier: SnowSimulation::TFM.Components.EditorSimulationController
-  terrain: {fileID: 11400000, guid: 8e7252b7d27344182a1800e661b09408, type: 2}
+  terrain: {fileID: 11400000, guid: 11ccad2d88aef418aaad436ae5e8e4c1, type: 2}
   parameters: {fileID: 11400000, guid: 7af48a64b6317420888f8a48d093c9c0, type: 2}
   initialSnowValue:
     x: 0
@@ -830,7 +830,7 @@ MonoBehaviour:
   melting: 1
   stability: 1
   powderDiffusion: 1
-  avalanche: 1
+  avalanche: 0
   simpleMelt: 0
   temperatureTimeline: 1
   precipitationTimeline: 0

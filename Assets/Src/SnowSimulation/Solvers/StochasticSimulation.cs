@@ -181,6 +181,9 @@ namespace TFM.Solvers
             //dlh = _renderer.AddTexture(TerrainMeshRenderer.TextureId.DirectIllumination, dlf, dlh);
             //ilh = _renderer.AddTexture(TerrainMeshRenderer.TextureId.IndirectIllumination, ilf, ilh);
             //alh = _renderer.AddTexture(TerrainMeshRenderer.TextureId.AmbientIllumination, alf, alh);
+            
+            ilh.Complete();
+            ilf.ExportToFile("indirect-nuria2");
 
             var clh = JobHandle.CombineDependencies(dlh, ilh, alh);
             clh = Lighting.TemperatureParallel(_illumination, dlf, alf, ilf, _height, ref parameters, clh);

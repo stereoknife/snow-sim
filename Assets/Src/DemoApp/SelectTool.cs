@@ -68,9 +68,32 @@ public class SelectTool : MonoBehaviour
         var scale = new Vector3(1, 1, 1);
         var tf = Matrix4x4.TRS(position, rotation, scale);
         
-        Debug.Log((Vector3)position);
+        //Debug.Log((Vector3)position);
 
         Graphics.RenderMesh(rp, mesh, 0, tf);
+
+        if (Mouse.current.leftButton.isPressed)
+        {
+            var radius = 50f;
+            var cellR = (int2)ceil(radius * sim.Heightfield.iCellSize);
+            var center = sim.Heightfield.cell(intersection.Value);
+            var smooth = 0.005f;
+            var array = sim.Snowfield.array;
+            
+            for (int i = -cellR.x; i <= cellR.x; i++)
+            {
+                for (int j = -cellR.y; j <= cellR.y ; j++)
+                {
+                    var cell = int2(i, j);
+                    if (any(center + cell < 0 | center + cell >= sim.Heightfield.dimension)) continue;
+                    float d = lengthsq(cell);
+                    if (d > cellR.x * cellR.y) continue;
+                    var w = exp(-d * smooth);
+                    array[sim.Snowfield.index(center + cell)] += w * Time.deltaTime * 0.01;
+                }
+            }
+        }
+        
         intersection.Dispose();
     }
     

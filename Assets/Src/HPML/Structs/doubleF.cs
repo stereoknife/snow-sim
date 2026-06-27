@@ -111,5 +111,13 @@ namespace HPML
 
         public void ToTexture2D(Texture2D tex)
             => FieldTextureExport.DoubleFToTex(this, tex);
+        
+        public void ExportToFile(string filename)
+        {
+            var tex = new Texture2D(dimension.x, dimension.y);
+            ToTexture2D(tex);
+            tex.Apply();
+            System.IO.File.WriteAllBytes($"{Application.persistentDataPath}/results/{filename}.png", tex.EncodeToPNG());
+        }
     }
 }

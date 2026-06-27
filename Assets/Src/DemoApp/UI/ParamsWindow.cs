@@ -12,9 +12,9 @@ namespace DemoApp
 {
     public class ParamsWindow : MonoBehaviour
     {
-        [FormerlySerializedAs("Show")] public bool show = true;
+        public bool show = true;
         
-        private SimulationController _control;
+        [SerializeField] private SimulationController _control;
         
         // UI VARS
         private float _directIntensity;
@@ -70,63 +70,23 @@ namespace DemoApp
         // Temp
         private float _temperatureIncreasePerMetre;
         private float _temperatureIncreasePerSunlight;
+        
+        private Vector3
+            meshGround = new(0.30f, 0.20f, 0.08f),
+            meshCliff = new(0.32f, 0.32f, 0.32f),
+            meshSnow = new(0.68f, 0.71f, 0.73f);
+        private Vector3
+            layerBedrock = new(0.42f, 0.42f, 0.42f),
+            layerCompacted = new(0.38f, 0.42f, 0.75f),
+            layerStable = new(0.49f, 0.97f, 1f),
+            layerUnstable = new(1, 0.26f, 0.26f),
+            layerPowder = new(1f, 1f, 1f);
 
         // END
-        
-        private void OnInitialize(UImGui.UImGui obj)
-        {
-            ref Wind.Parameters wp = ref _control.WindParams;
-            ref Lighting.Parameters lp = ref _control.LightParams;
-            ref Snow.Parameters sp = ref _control.Simulation.Parameters;
-            
-            _directIntensity = (float)lp.IntensityDirect;
-            _ambientIntensity = (float)lp.IntensityAmbient;
-            _indirectIntensity = (float)lp.IntensityIndirect;
-            _indMaxDistance = (float)lp.IndirectMaxDistance;
-
-            _windHeading = (float)atan2(-wp.WindDirection.x, -wp.WindDirection.y);
-            _venturiIntensity = (float)wp.VenturiIntensity;
-            _deflectionIntensity = (float)wp.DeflectionIntensity;
-            _surfaceFalloff = (float)wp.SurfaceFalloff;
-            _maxWindSpeed = (float)(wp.SurfaceSamples * wp.SurfaceSpeedIncrement);
-            
-            _snowfallStrength = (float)sp.SnowfallStrength;
-            _snowfallMax = (float)sp.SnowfallMax;
-            _snowfallPowderRatio = (float)sp.SnowfallPowderRatio;
-            _snowfallUnstableRatio = (float)sp.SnowfallUnstableRatio;
-            _criticalSlopeMin = (float)atan(sp.CriticalSlopeMin);
-            _criticalSlopeTempFactor = (float)sp.CriticalSlopeTempFactor;
-            _criticalSlopeMaxTemp = (float)sp.CriticalSlopeMaxTemp;
-            
-            _meltRate = (float)sp.MeltRate;
-            _meltTemp = (float)sp.MeltTemp;
-            _meltVolumeFactor = (float)sp.MeltVolumeFactor;
-            
-            _stabilityStableTemp = (float)sp.StabilityStableTemp;
-            _stabilityUnstableTemp = (float)sp.StabilityUnstableTemp;
-            _stabilityFreezeTemp = (float)sp.StabilityFreezeTemp;
-            _stabilityHot = (float)sp.StabilityHot;
-            _stabilityMedium = (float)sp.StabilityMedium;
-            _stabilityFreeze = (float)sp.StabilityFreeze;
-            _stabilityCompactionPressure = (float)sp.StabilityCompactionPressure;
-            _stabilityMinSlope = (float)atan(sp.StabilityMinSlope);
-            
-            _diffusionRestSlope = (float)atan(sp.DiffusionRestSlope);
-            _diffusionRate = (float)sp.DiffusionRate;
-            
-            _windPlates = (float)sp.WindPlates;
-            _windErosionRate = (float)sp.WindErosionRate;
-            
-            _avalancheSnowDensity = (float)sp.AvalancheSnowDensity;
-            _avalancheSnowViscosity = (float)sp.AvalancheSnowViscosity;
-            _avalancheRestSlope = (float)atan(sp.AvalancheRestSlope);
-            _avalancheGravity = (float)sp.AvalancheGravity;
-            _avalancheTemp = (float)sp.AvalancheTemp;
-        }
 
         private void OnLayout(UImGui.UImGui obj)
         {
-            if (!show || !ImGui.Begin("Timeline editor", ref show)) return;
+            if (!ImGui.Begin("Settings")) return;
 
             ref Wind.Parameters wp = ref _control.WindParams;
             ref Lighting.Parameters lp = ref _control.LightParams;
@@ -134,14 +94,29 @@ namespace DemoApp
             
             if (ImGui.BeginTabBar("Parameter selection"))
             {
-                if (ImGui.BeginTabItem("Application"))
+                
+                if (ImGui.BeginTabItem("Rendering"))
                 {
-
+                    ImGui.SeparatorText("Mesh renderer");
+                    var cliffAngle = PI / 4;
+                    ImGui.ColorEdit3("Ground colour", ref meshGround);
+                    ImGui.ColorEdit3("Cliff colour", ref meshCliff);
+                    ImGui.ColorEdit3("Snow colour", ref meshSnow);
+                    ImGui.SliderAngle("Cliff angle", ref cliffAngle);
+                    
+                    ImGui.SeparatorText("Layers renderer");
+                    ImGui.ColorEdit3("Ground colour", ref layerBedrock);
+                    ImGui.ColorEdit3("Cliff colour", ref layerCompacted);
+                    ImGui.ColorEdit3("Snow colour", ref layerStable);
+                    ImGui.ColorEdit3("Cliff colour", ref layerUnstable);
+                    ImGui.ColorEdit3("Snow colour", ref layerPowder);
+                    ImGui.EndTabItem();
                 }
                 
                 if (ImGui.BeginTabItem("Event timings"))
                 {
                     var p = _control.Simulation.Periods;
+                    Debug.Log(p.Length);
                     for (int i = 0; i < p.Length; i++)
                     {
                         var (k, v) = p[i];
@@ -278,24 +253,67 @@ namespace DemoApp
             }
             ImGui.End();
         }
-
-        private void OnDeinitialize(UImGui.UImGui obj)
-        {
-            // Runs after UImGui.OnDisable();
-        }
         
         private void OnEnable()
         {
             UImGuiUtility.Layout += OnLayout;
-            UImGuiUtility.OnInitialize += OnInitialize;
-            UImGuiUtility.OnDeinitialize += OnDeinitialize;
+            //UImGuiUtility.OnInitialize += OnInitialize;
+            //UImGuiUtility.OnDeinitialize += OnDeinitialize;
+            
+            ref Wind.Parameters wp = ref _control.WindParams;
+            ref Lighting.Parameters lp = ref _control.LightParams;
+            ref Snow.Parameters sp = ref _control.Simulation.Parameters;
+            
+            _directIntensity = (float)lp.IntensityDirect;
+            _ambientIntensity = (float)lp.IntensityAmbient;
+            _indirectIntensity = (float)lp.IntensityIndirect;
+            _indMaxDistance = (float)lp.IndirectMaxDistance;
+
+            _windHeading = (float)atan2(-wp.WindDirection.x, -wp.WindDirection.y);
+            _venturiIntensity = (float)wp.VenturiIntensity;
+            _deflectionIntensity = (float)wp.DeflectionIntensity;
+            _surfaceFalloff = (float)wp.SurfaceFalloff;
+            _maxWindSpeed = (float)(wp.SurfaceSamples * wp.SurfaceSpeedIncrement);
+            
+            _snowfallStrength = (float)sp.SnowfallStrength;
+            _snowfallMax = (float)sp.SnowfallMax;
+            _snowfallPowderRatio = (float)sp.SnowfallPowderRatio;
+            _snowfallUnstableRatio = (float)sp.SnowfallUnstableRatio;
+            _criticalSlopeMin = (float)atan(sp.CriticalSlopeMin);
+            _criticalSlopeTempFactor = (float)sp.CriticalSlopeTempFactor;
+            _criticalSlopeMaxTemp = (float)sp.CriticalSlopeMaxTemp;
+            
+            _meltRate = (float)sp.MeltRate;
+            _meltTemp = (float)sp.MeltTemp;
+            _meltVolumeFactor = (float)sp.MeltVolumeFactor;
+            
+            _stabilityStableTemp = (float)sp.StabilityStableTemp;
+            _stabilityUnstableTemp = (float)sp.StabilityUnstableTemp;
+            _stabilityFreezeTemp = (float)sp.StabilityFreezeTemp;
+            _stabilityHot = (float)sp.StabilityHot;
+            _stabilityMedium = (float)sp.StabilityMedium;
+            _stabilityFreeze = (float)sp.StabilityFreeze;
+            _stabilityCompactionPressure = (float)sp.StabilityCompactionPressure;
+            _stabilityMinSlope = (float)atan(sp.StabilityMinSlope);
+            
+            _diffusionRestSlope = (float)atan(sp.DiffusionRestSlope);
+            _diffusionRate = (float)sp.DiffusionRate;
+            
+            _windPlates = (float)sp.WindPlates;
+            _windErosionRate = (float)sp.WindErosionRate;
+            
+            _avalancheSnowDensity = (float)sp.AvalancheSnowDensity;
+            _avalancheSnowViscosity = (float)sp.AvalancheSnowViscosity;
+            _avalancheRestSlope = (float)atan(sp.AvalancheRestSlope);
+            _avalancheGravity = (float)sp.AvalancheGravity;
+            _avalancheTemp = (float)sp.AvalancheTemp;
         }
 
         private void OnDisable()
         {
             UImGuiUtility.Layout -= OnLayout;
-            UImGuiUtility.OnInitialize -= OnInitialize;
-            UImGuiUtility.OnDeinitialize -= OnDeinitialize;
+            //UImGuiUtility.OnInitialize -= OnInitialize;
+            //UImGuiUtility.OnDeinitialize -= OnDeinitialize;
         }
 
         private void Help(string desc)
